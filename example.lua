@@ -1,5 +1,5 @@
 --[[
-    WolfUi 8.0 - full element demo
+    WolfUi 11 - full element demo
     Every Tab:Add* element, organized into blocks, plus window/library APIs.
     Run in an executor (needs game:HttpGet + loadstring). Toggle the menu with RightShift.
 ]]
@@ -21,7 +21,6 @@ end
 
 local Window = Library:CreateWindow({
     Name = "WolfUi",
-    Subtitle = "Element showcase",
     Icon = {"paw-print", "dog"},
     Theme = "Midnight",
     ToggleKey = "RightShift",
@@ -39,7 +38,8 @@ local Home = Window:CreateTab({
     Description = "Overview and information elements",
 })
 
-local Overview = Home:AddBlock({Name = "Overview", Icon = {"activity"}, Description = "Live session stats"})
+-- Blocks default to half width and pack into two columns; Width = 1 spans both.
+local Overview = Home:AddBlock({Name = "Overview", Icon = {"activity"}, Description = "Live session stats", Width = 1})
 local fpsStat = Overview:AddStat({Name = "FPS", Value = "0", Description = "Frames per second", Width = 0.5})
 local timeStat = Overview:AddStat({Name = "Session", Value = "0s", Description = "Time since load", Width = 0.5})
 local progress = Overview:AddProgressBar({Name = "Loading demo", Default = 0, ShowPercent = true})
@@ -240,7 +240,7 @@ Target:AddButton({
     end,
 })
 
-local Server = PlayersTab:AddBlock({Name = "Server", Icon = {"server", "globe"}})
+local Server = PlayersTab:AddBlock({Name = "Server", Icon = {"server", "globe"}, Width = 1})
 Server:AddPlayerList({
     Name = "Players in server",
     ShowDistance = true,
@@ -267,7 +267,7 @@ local Cards = Window:CreateTab({
     Description = "Card grid selection",
 })
 
-local Loadout = Cards:AddBlock({Name = "Loadout", Icon = {"package", "box"}})
+local Loadout = Cards:AddBlock({Name = "Loadout", Icon = {"package", "box"}, Width = 1})
 Loadout:AddCardGrid({
     Name = "Pick up to 2",
     Columns = 3,
@@ -295,6 +295,7 @@ Loadout:AddCardGrid({
 ------------------------------------------------------------------------
 local Settings = Window:CreateTab({
     Name = "Settings",
+    Section = "Preferences",   -- starts a captioned group in the sidebar
     Icon = {"settings", "cog"},
     Description = "Appearance, configs and menu",
     BlockName = "Appearance",
