@@ -544,6 +544,24 @@ local function motionFactor(speed, dt)
     return 1 - math.exp(-math.max(0, speed) * math.min(dt, 0.1))
 end
 
+local function easeOutQuint(t)
+    t = math.clamp(t, 0, 1)
+    return 1 - (1 - t) ^ 5
+end
+
+-- Critically damped spring; sub-stepped so long frames stay stable.
+local function spring(position, velocity, target, omega, dt)
+    local remaining = math.min(dt, 0.1)
+    while remaining > 0 do
+        local h = math.min(remaining, 1 / 120)
+        velocity = velocity + (-(omega * omega) * (position - target) - 2 * omega * velocity) * h
+        position = position + velocity * h
+        remaining = remaining - h
+    end
+    if math.abs(position - target) < 0.05 and math.abs(velocity) < 0.5 then return target, 0 end
+    return position, velocity
+end
+
 local function colorDelta(left, right)
     return math.max(math.abs(left.R - right.R), math.abs(left.G - right.G), math.abs(left.B - right.B))
 end
@@ -647,7 +665,7 @@ local function fadeGroup(root, alpha)
     fadeTargetList(fadeTargets(root), alpha)
 end
 
-local ROUND_FACTOR = 1.75
+local ROUND_FACTOR = 1
 
 local function new(class, parent, props)
     local object = Instance.new(class)
@@ -891,10 +909,11 @@ local INTERNAL_FLAGS = {
 }
 
 local Library = {
-    Version = "8.0.0",
+    Version = "9.0.0",
     Capabilities = table.freeze({Layout = 3, Groups = 1, Blocks = 1, Themes = 1, NotificationCenter = 1, CardNotifications = 1, ConditionalColors = 1, ConfigRestore = 2, ESPPreview = 1}),
-    Design = table.freeze({CardRadius = 10, PopupRadius = 8, ControlRadius = 3, RowRadius = 7,
-        CardTransparency = 0.08, StrokeTransparency = 0.7, RowTransparency = 0.35, RowStrokeTransparency = 0.82,
+    Design = table.freeze({CardRadius = 6, PopupRadius = 6, ControlRadius = 3, RowRadius = 4,
+        CardTransparency = 0, StrokeTransparency = 0.25, RowTransparency = 0, RowStrokeTransparency = 0.55,
+        HoverStrokeTransparency = 0, EnterDuration = 0.38, EnterStagger = 0.035, EnterRise = 12,
         Gap = 10, Padding = 10, BlockPadding = BLOCK_PAD, BlockGap = BLOCK_GAP}),
     NotificationOptions = {Width = 250, MaxVisible = 5, Position = "Right", Gap = 8, PauseOnHover = true},
     Flags = {},
@@ -910,9 +929,9 @@ local Library = {
     Font = UI_FONT,
     FontBold = UI_FONT_BOLD,
     FadeAnimations = true,
-    FadeDuration = 0.24,
-    TabDuration = 0.2,
-    TabSlide = 10,
+    FadeDuration = 0.22,
+    TabDuration = 0.22,
+    TabSlide = 0,
     ScaleAnimations = true,
     ScaleDuration = 0.22,
     ScaleOptions = {100, 75, 50},
@@ -1120,7 +1139,7 @@ function Library:SetAccent(color, alpha)
 end
 
 function Library:SetRoundness(factor)
-    ROUND_FACTOR = math.clamp(tonumber(factor) or 1.75, 0.5, 3)
+    ROUND_FACTOR = math.clamp(tonumber(factor) or 1, 0.5, 3)
     return ROUND_FACTOR
 end
 
@@ -1244,13 +1263,9 @@ local Window = {}
 Window.__index = Window
 
 local function createPopup(window, anchor, w, h, animateHeight, parentPopup)
-    local object = rect(window.PopupLayer, 0, 0, w, h, palette[2], 8, "Frame")
-    object.BackgroundTransparency = 0.24
-    new("UIGradient", object, {
-        Rotation = 110,
-        Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(190, 190, 190)),
-    })
-    new("UIStroke", object, {Color = Color3.fromRGB(100, 100, 100), Thickness = 1, Transparency = 0.6,
+    local object = rect(window.PopupLayer, 0, 0, w, h, palette[2], Library.Design.PopupRadius, "Frame")
+    object.BackgroundTransparency = 0
+    new("UIStroke", object, {Color = palette[6], Thickness = 1, Transparency = 0.2,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
     object.Name = "Popup"
     object.Visible = false
@@ -1495,6 +1510,31 @@ function Runtime.StartRenderer(window, frame, scale, popupLayer, blurSize, inval
                     window.Animating = true
                 end
                 local page = tab.Page
+                if tabActive and tab.EnterClock then
+                    local design = Library.Design
+                    local since = os.clock() - tab.EnterClock
+                    local finished = Library.FadeAnimations == false
+                    if not finished then
+                        finished = true
+                        for index, item in ipairs(tab.LayoutItems or {}) do
+                            local object = item.Object
+                            if object and object.Parent and item.X then
+                                local t = (since - math.min(index - 1, 10) * design.EnterStagger) / design.EnterDuration
+                                if t < 1 then finished = false end
+                                local rise = roundPixel((1 - easeOutQuint(t)) * design.EnterRise)
+                                object.Position = UDim2.fromOffset(item.X, item.Y + rise)
+                            end
+                        end
+                    end
+                    if finished then
+                        tab.EnterClock = nil
+                        for _, item in ipairs(tab.LayoutItems or {}) do
+                            if item.Object and item.X then item.Object.Position = UDim2.fromOffset(item.X, item.Y) end
+                        end
+                    else
+                        window.Animating = true
+                    end
+                end
                 page.Visible = tab.Alpha > 0.001
                 page.Interactable = tabActive and window.Visible
                 if page.Visible then
@@ -1552,8 +1592,16 @@ function Runtime.StartRenderer(window, frame, scale, popupLayer, blurSize, inval
             end
         end
         local hiddenAmount = 1 - math.clamp(window.Alpha, 0, 1)
-        local revealOffset = hiddenAmount * hiddenAmount * 6 * window.ScaleCurrent
-        local animatedPosition = UDim2.fromOffset(window.Position.X, window.Position.Y + revealOffset)
+        local eased = hiddenAmount * hiddenAmount
+        local shrink = 1 - 0.04 * eased
+        local openScale = window.ScaleCurrent * shrink
+        if math.abs(scale.Scale - openScale) > 0.00005 then
+            scale.Scale = openScale
+            window.PopupScale.Scale = openScale
+        end
+        local inset = Vector2.new(WINDOW_W, WINDOW_H) * (window.ScaleCurrent - openScale) / 2
+        local animatedPosition = UDim2.fromOffset(roundPixel(window.Position.X + inset.X),
+            roundPixel(window.Position.Y + inset.Y + eased * 10 * window.ScaleCurrent))
         frame.Position = animatedPosition
         popupLayer.Position = animatedPosition
         if mainTransitioning then
@@ -1703,37 +1751,18 @@ function Library:CreateWindow(opts)
     window.TabChanged = new("BindableEvent", events, {Name = "TabChanged"})
     window.ButtonPressed = new("BindableEvent", events, {Name = "ButtonPressed"})
 
-    local frame = paint(rect(gui, 0, 0, WINDOW_W, WINDOW_H, palette[1], 12, "Frame"), 1)
+    local frame = paint(rect(gui, 0, 0, WINDOW_W, WINDOW_H, palette[1], 8, "Frame"), 1)
     frame.Name = "Window"
     frame.ZIndex = 2
     frame.Active = true
     frame.ClipsDescendants = true
     window.Frame = frame
-    frame.BackgroundTransparency = 0.04
-    new("UIGradient", frame, {
-        Rotation = 135,
-        Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(222, 225, 236)),
-    })
-    local glassEdge = new("UIStroke", frame, {
-        Color = Color3.fromRGB(92, 98, 128), Thickness = 1, Transparency = 0.45,
+    frame.BackgroundTransparency = 0
+    new("UIStroke", frame, {
+        Color = palette[6], Thickness = 1, Transparency = 0.1,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
     })
-    new("UIGradient", glassEdge, {
-        Rotation = 100,
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.05),
-            NumberSequenceKeypoint.new(0.5, 0.4),
-            NumberSequenceKeypoint.new(1, 0.65),
-        }),
-    })
-    local blurSize = 14
-    do
-        local effect = Instance.new("BlurEffect")
-        effect.Name = "WolfUIFrost"
-        effect.Size, effect.Enabled = 0, false
-        window.GlassBlur = effect
-        Library.Maid:Add(effect)
-    end
+    local blurSize = 0
     connect(frame.DescendantAdded, function() window.MainFadeDirty = true end)
     connect(frame.DescendantRemoving, function() window.MainFadeDirty = true end)
 
@@ -1889,14 +1918,10 @@ function Library:CreateWindow(opts)
 
     local sidebar = paint(rect(frame, 0, 0, SIDEBAR_W, WINDOW_H, palette[2]), 2)
     sidebar.BackgroundTransparency = 1
-    local sidebarSurface = paint(rect(sidebar, 6, 6, SIDEBAR_W - 12, WINDOW_H - 12, palette[2], 10), 2)
+    local sidebarSurface = paint(rect(sidebar, 6, 6, SIDEBAR_W - 12, WINDOW_H - 12, palette[2], 6), 2)
     sidebarSurface.Name = "Surface"
-    sidebarSurface.BackgroundTransparency = 0.1
-    new("UIGradient", sidebarSurface, {
-        Rotation = 90,
-        Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(226, 229, 240)),
-    })
-    new("UIStroke", sidebarSurface, {Color = palette[5], Thickness = 1, Transparency = 0.6,
+    sidebarSurface.BackgroundTransparency = 0
+    new("UIStroke", sidebarSurface, {Color = palette[5], Thickness = 1, Transparency = Library.Design.StrokeTransparency,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
     sidebar.Name = "Sidebar"
     window.Sidebar = sidebar
@@ -1906,7 +1931,7 @@ function Library:CreateWindow(opts)
     local logoHit = transparent(sidebar, 6, 6, brandW, BRAND_H - 6, "TextButton")
     logoHit.Name = "Brand"
     local logoSize = 20
-    local logoChip = rect(logoHit, 10, (BRAND_H - 6 - 32) / 2, 32, 32, accent, 9)
+    local logoChip = rect(logoHit, 10, (BRAND_H - 6 - 32) / 2, 32, 32, accent, 5)
     logoChip.BackgroundTransparency = 0.82
     local logoIcon = iconLabel(logoChip, windowIcon, (32 - logoSize) / 2, (32 - logoSize) / 2,
         logoSize, accent, string.sub(opts.Name or "W", 1, 1))
@@ -1946,9 +1971,11 @@ function Library:CreateWindow(opts)
     local profileH = showProfile and PROFILE_H or 0
     if showProfile then
         local profile = paint(rect(sidebar, 12, WINDOW_H - PROFILE_H, SIDEBAR_W - 24, PROFILE_H - 12,
-            palette[4], 8), 4)
+            palette[1], 4), 1)
         profile.Name = "Profile"
-        profile.BackgroundTransparency = 0.35
+        profile.BackgroundTransparency = 0
+        new("UIStroke", profile, {Color = palette[5], Thickness = 1, Transparency = Library.Design.RowStrokeTransparency,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
         local avatar = new("ImageLabel", profile, {
             BackgroundColor3 = palette[5],
             BorderSizePixel = 0,
@@ -1957,7 +1984,7 @@ function Library:CreateWindow(opts)
             Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(player.UserId) .. "&w=48&h=48",
             ZIndex = 2,
         })
-        new("UICorner", avatar, {CornerRadius = UDim.new(1, 0)})
+        new("UICorner", avatar, {CornerRadius = UDim.new(0, 4)})
         local nameW = SIDEBAR_W - 24 - 50
         text(profile, player.DisplayName, 42, 6, nameW, 14, 11, white, nil, {Bold = true})
         muted(profile, "@" .. player.Name, 42, 20, nameW, 13, 10)
@@ -1980,19 +2007,54 @@ function Library:CreateWindow(opts)
     })
     window.TabHolder = tabHolder
 
+    -- One shared highlight glides between tabs instead of each row fading its own background.
+    local navHighlight = paint(rect(tabHolder, 6, 2, SIDEBAR_W - 24, TAB_SLOT - 4, palette[4], 4), 4)
+    navHighlight.Name = "ActiveHighlight"
+    navHighlight.ZIndex = 0
+    navHighlight.BackgroundTransparency = 1
+    local navStroke = new("UIStroke", navHighlight, {Color = palette[5], Thickness = 1, Transparency = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    local navBar = rect(navHighlight, 0, (TAB_SLOT - 4 - 16) / 2, 3, 16, accent, 1)
+    navBar.ZIndex = 0
+    local navY, navVelocity, navAlpha, navHeight = nil, 0, 0, 16
+    step(function(dt, k)
+        local tab = window.Current
+        local target = tab and ((tab.Index - 1) * TAB_SLOT + 2) or navY or 2
+        if not navY or Library.FadeAnimations == false then
+            navY, navVelocity = target, 0
+        else
+            local before = navY
+            navY, navVelocity = spring(navY, navVelocity, target, 26, dt)
+            -- The bar briefly stretches while travelling.
+            navHeight = approach(navHeight, 16 + math.min(10, math.abs(before - navY) * 1.4), motionFactor(18, dt))
+            if navY ~= target or math.abs(navHeight - 16) > 0.2 then window.Animating = true end
+        end
+        navAlpha = approach(navAlpha, tab and 1 or 0, k)
+        navHighlight.Position = UDim2.fromOffset(6, roundPixel(navY))
+        navHighlight.BackgroundTransparency = 1 - navAlpha
+        navStroke.Transparency = 1 - navAlpha * (1 - Library.Design.RowStrokeTransparency)
+        navBar.BackgroundColor3 = accent
+        navBar.BackgroundTransparency = 1 - navAlpha * state.AccentAlpha
+        navBar.Size = UDim2.fromOffset(3, roundPixel(navHeight))
+        navBar.Position = UDim2.fromOffset(0, roundPixel((TAB_SLOT - 4 - navHeight) / 2))
+    end, navHighlight)
+    window.NavHighlight = navHighlight
+
     -- Header block: active tab icon, title, caption and block count.
     local headerW, headerH = CONTENT_W - PAD * 2, HEADER_H - 12
-    local header = paint(rect(frame, SIDEBAR_W + PAD, 6, headerW, headerH, palette[2], 9), 2)
+    local header = paint(rect(frame, SIDEBAR_W + PAD, 6, headerW, headerH, palette[2], Library.Design.CardRadius), 2)
     header.Name = "Header"
     header.BackgroundTransparency = Library.Design.CardTransparency
     new("UIStroke", header, {Color = palette[5], Thickness = 1, Transparency = Library.Design.StrokeTransparency,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
-    local headerChip = rect(header, 7, (headerH - 24) / 2, 24, 24, accent, 7)
+    local headerChip = rect(header, 7, (headerH - 24) / 2, 24, 24, accent, 4)
     headerChip.BackgroundTransparency = 0.82
     local headerIcon = iconLabel(headerChip, {"layout-grid", "grid", "circle"}, 5, 5, 14, accent, "#")
     local headerTitle = text(header, "", 40, 4, headerW - 140, 16, 13, white, nil, {Bold = true})
     local headerCaption = muted(header, "", 40, 19, headerW - 140, 14, 10)
-    local countChip = paint(rect(header, headerW - 84, (headerH - 20) / 2, 76, 20, palette[4], 6), 4)
+    local countChip = paint(rect(header, headerW - 84, (headerH - 20) / 2, 76, 20, palette[1], 3), 1)
+    new("UIStroke", countChip, {Color = palette[5], Thickness = 1, Transparency = Library.Design.RowStrokeTransparency,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
     local countLabel = text(countChip, "", 0, 0, 76, 20, 10, palette[3], "center")
     themedLabels[countLabel.Object] = 3
     draggable(header, moveWindow, nil, DRAG_THRESHOLD)
@@ -2001,8 +2063,16 @@ function Library:CreateWindow(opts)
     window.HeaderCaption = headerCaption
 
     local shownTab = false
-    step(function()
+    local headerSlide = 0
+    step(function(dt)
         local tab = window.Current
+        if tab ~= shownTab and Library.FadeAnimations ~= false then headerSlide = 10 end
+        headerSlide = approach(headerSlide, 0, motionFactor(14, dt))
+        if headerSlide < 0.05 then headerSlide = 0 else window.Animating = true end
+        local offset = roundPixel(headerSlide)
+        headerTitle.Object.Position = UDim2.fromOffset(40 + offset, 4)
+        headerCaption.Object.Position = UDim2.fromOffset(40 + offset * 1.6, 19)
+        headerTitle:Color(white:Lerp(palette[3], headerSlide / 10))
         headerChip.BackgroundColor3 = accent
         headerIcon:Color(accent)
         if tab ~= shownTab or window.HeaderIconDirty then
@@ -3203,6 +3273,7 @@ function Window:SelectTab(name)
     end
     tab.Slide = previous and (direction * slide * (1 - math.clamp(tab.Alpha or 0, 0, 1))) or 0
     tab.ExitSlide = 0
+    tab.EnterClock = os.clock()
     if previous then previous.ScrollPosition = self.Scroll.CanvasPosition.Y end
     self.Opened = nil
     self.Current = tab
@@ -3256,11 +3327,9 @@ function Window:CreateTab(opts)
 
     local top = (index - 1) * TAB_SLOT
     local rowW = SIDEBAR_W - 24
-    local hit = rect(self.TabHolder, 6, top + 2, rowW, TAB_SLOT - 4, palette[4], 8, "TextButton")
+    local hit = rect(self.TabHolder, 6, top + 2, rowW, TAB_SLOT - 4, palette[4], 4, "TextButton")
     hit.Name = name
     hit.BackgroundTransparency = 1
-    local indicator = rect(hit, 0, (TAB_SLOT - 4 - 14) / 2, 3, 14, accent, 2)
-    indicator.BackgroundTransparency = 1
     local icon = iconLabel(hit, opts.Icon or {"circle"}, 12, (TAB_SLOT - 4 - 15) / 2, 15, palette[3],
         opts.Fallback or string.sub(name, 1, 1))
     local title = text(hit, opts.Title or name, 36, 0, rowW - 44, TAB_SLOT - 4, 12, palette[3])
@@ -3281,10 +3350,10 @@ function Window:CreateTab(opts)
         alpha = approach(alpha, active and 1 or 0, k)
         hoverAlpha = approach(hoverAlpha, (hover and not active) and 1 or 0, k)
         tint = tint:Lerp(active and white or palette[3]:Lerp(white, hoverAlpha * 0.6), k)
-        hit.BackgroundColor3 = palette[4]:Lerp(accent, alpha * 0.16 * state.AccentAlpha)
-        hit.BackgroundTransparency = 1 - math.max(alpha * 0.9, hoverAlpha * 0.5)
-        indicator.BackgroundColor3 = accent
-        indicator.BackgroundTransparency = 1 - alpha * state.AccentAlpha
+        hit.BackgroundColor3 = palette[4]
+        hit.BackgroundTransparency = 1 - hoverAlpha * 0.55
+        title.Object.Position = UDim2.fromOffset(36 + roundPixel(alpha * 3), 0)
+        icon.Object.Position = UDim2.fromOffset(12 + roundPixel(alpha * 3), (TAB_SLOT - 4 - 15) / 2)
         icon:Color(palette[3]:Lerp(accent, alpha):Lerp(white, hoverAlpha * 0.6))
         title:Color(tint)
     end, hit)
@@ -3399,26 +3468,21 @@ function Tab:_grow()
         self.Window.Scroll.CanvasSize = UDim2.fromOffset(0, height + PAD * 2)
     end
 end
+-- Blocks are raised surfaces; rows inside a block are inset one level darker.
+local function surface(parent, x, y, w, h, inset)
+    local design = Library.Design
+    local index = inset and 1 or 2
+    local card = paint(rect(parent, x, y, w, h, palette[index], inset and design.RowRadius or design.CardRadius), index)
+    card.BackgroundTransparency = inset and design.RowTransparency or design.CardTransparency
+    new("UIStroke", card, {Color = palette[5], Thickness = 1,
+        Transparency = inset and design.RowStrokeTransparency or design.StrokeTransparency,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    return card
+end
+
 function Tab:_card(w, h, name)
     local x, y = self:_place(w, h)
-    local design = Library.Design
-    local card
-    if self.IsGroup then
-        -- Rows inside a block are inset so the block reads as one surface.
-        card = paint(rect(self.Page, x, y, w, h, palette[1], design.RowRadius or 7), 1)
-        card.BackgroundTransparency = design.RowTransparency or 0.35
-        new("UIStroke", card, {Color = palette[5], Thickness = 1, Transparency = design.RowStrokeTransparency or 0.82,
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
-    else
-        card = paint(rect(self.Page, x, y, w, h, palette[2], design.CardRadius), 2)
-        card.BackgroundTransparency = design.CardTransparency
-        new("UIGradient", card, {
-            Rotation = 100,
-            Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(226, 226, 230)),
-        })
-        new("UIStroke", card, {Color = palette[5], Thickness = 1, Transparency = design.StrokeTransparency,
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
-    end
+    local card = surface(self.Page, x, y, w, h, self.IsGroup)
     card.Name = name or "Element"
     local record = self:_track(card)
     if Runtime.GetOwner() then
@@ -3990,7 +4054,7 @@ local function buildBlock(self, opts, isBlock)
     card.ClipsDescendants = true
     local header = transparent(card, 0, 0, w, headerH, collapsible and "TextButton" or "Frame")
     header.Name = "Header"
-    local chip = rect(header, 10, (headerH - 24) / 2, 24, 24, accent, 7)
+    local chip = rect(header, 10, (headerH - 24) / 2, 24, 24, accent, 4)
     chip.BackgroundTransparency = 0.84
     local icon = iconLabel(chip, opts.Icon or {"layers", "box", "square"}, 5, 5, 14, accent,
         string.sub(title, 1, 1))
@@ -4001,13 +4065,20 @@ local function buildBlock(self, opts, isBlock)
     local caption = description and muted(header, description, 42, 25, textW, 14, 10) or nil
     local countChip, countLabel
     if showCount then
-        countChip = paint(rect(header, w - rightW - 4, (headerH - 18) / 2, 34, 18, palette[4], 6), 4)
+        countChip = paint(rect(header, w - rightW - 4, (headerH - 18) / 2, 34, 18, palette[1], 3), 1)
+        new("UIStroke", countChip, {Color = palette[5], Thickness = 1,
+            Transparency = Library.Design.RowStrokeTransparency, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
         countLabel = text(countChip, "0", 0, 0, 34, 18, 10, palette[3], "center")
         themedLabels[countLabel.Object] = 3
     end
     local arrow = collapsible and iconLabel(header, {"chevron-right"}, w - 26, (headerH - 14) / 2, 14,
         palette[3], ">") or nil
-    local separator = paint(rect(card, 10, headerH, w - 20, 1, palette[4]), 4)
+    local separator = paint(rect(card, 0, headerH, w, 1, palette[5]), 5)
+    separator.BackgroundTransparency = Library.Design.StrokeTransparency
+    local blockStroke = card:FindFirstChildOfClass("UIStroke")
+    local cardHover = false
+    connect(card.MouseEnter, function() cardHover = true end)
+    connect(card.MouseLeave, function() cardHover = false end)
     local body = transparent(card, BLOCK_PAD, headerH + BLOCK_PAD, w - BLOCK_PAD * 2, 1)
     local group = setmetatable({Object = card, Page = body, Window = self.Window,
         -- Blocks share the tab's Name so default element flags stay identical to pre-block layouts.
@@ -4016,7 +4087,7 @@ local function buildBlock(self, opts, isBlock)
         Cursor = {X = 0, Y = 0, RowHeight = 0}, Maid = Runtime.GetOwner(), ParentTab = parent,
         IsGroup = true, IsBlock = isBlock == true, Collapsible = collapsible,
         Collapsed = collapsible and opts.Collapsed == true, TargetHeight = headerH}, Tab)
-    local shown = headerH
+    local shown, velocity = headerH, 0
     local function sizeTarget()
         local empty = group.Height <= 0
         group.TargetHeight = (group.Collapsed or empty) and headerH
@@ -4032,7 +4103,7 @@ local function buildBlock(self, opts, isBlock)
         self.Collapsed = self.Collapsible and value == true
         sizeTarget()
         if instant then
-            shown = self.TargetHeight
+            shown, velocity = self.TargetHeight, 0
             card.Size = UDim2.fromOffset(w, roundPixel(shown))
             parent:_track(card)
             parent:Reflow()
@@ -4063,19 +4134,31 @@ local function buildBlock(self, opts, isBlock)
         end
         self.Destroyed = true
     end
+    local hover, hoverAlpha, arrowRotation = false, 0, group.Collapsed and 0 or 90
     if collapsible then
-        local hover = false
         connect(header.MouseEnter, function() hover = true end)
         connect(header.MouseLeave, function() hover = false end)
         connect(header.Activated, function() group:Toggle() end)
-        step(function(_, k)
-            if arrow then arrow:Color(palette[3]:Lerp(white, hover and 0.7 or 0)) end
-        end, header)
     end
-    step(function(dt)
+    step(function(dt, k)
         if group.Destroyed then return end
-        local nextHeight = approach(shown, group.TargetHeight, motionFactor(24, dt))
-        if math.abs(nextHeight - group.TargetHeight) < 0.5 then nextHeight = group.TargetHeight end
+        hoverAlpha = approach(hoverAlpha, (cardHover or hover) and 1 or 0, k)
+        if blockStroke then
+            blockStroke.Color = palette[5]:Lerp(palette[6], hoverAlpha)
+        end
+        if arrow then
+            arrow:Color(palette[3]:Lerp(white, hover and 0.7 or 0))
+            arrowRotation = approach(arrowRotation, group.Collapsed and 0 or 90, motionFactor(16, dt))
+            arrow.Object.Rotation = math.abs(arrowRotation - (group.Collapsed and 0 or 90)) < 0.3
+                and (group.Collapsed and 0 or 90) or arrowRotation
+        end
+        local nextHeight
+        if Library.FadeAnimations == false then
+            nextHeight, velocity = group.TargetHeight, 0
+        else
+            nextHeight, velocity = spring(shown, velocity, group.TargetHeight, 20, dt)
+        end
+        if math.abs(nextHeight - group.TargetHeight) < 0.5 then nextHeight, velocity = group.TargetHeight, 0 end
         if math.abs(nextHeight - shown) > 0.001 then
             shown = nextHeight
             card.Size = UDim2.fromOffset(w, roundPixel(shown))
@@ -4083,8 +4166,10 @@ local function buildBlock(self, opts, isBlock)
         chip.BackgroundColor3 = accent
         icon:Color(accent)
         if countLabel then countLabel:SetText(tostring(#group.Elements)) end
-        if arrow then arrow.Object.Rotation = group.Collapsed and 0 or 90 end
-        if shown ~= group.TargetHeight then group.Window.Animating = true end
+        if shown ~= group.TargetHeight or hoverAlpha > 0.001 and hoverAlpha < 0.999
+            or arrow and arrow.Object.Rotation ~= (group.Collapsed and 0 or 90) then
+            group.Window.Animating = true
+        end
     end, card)
     self.Elements[#self.Elements + 1] = group
     if Runtime.GetOwner() then
@@ -4747,10 +4832,7 @@ local function makeSlider(tab, parent, x, y, w, opts)
     local valueFormat = "%." .. tostring(decimals) .. "f"
     local lastCaptionValue
 
-    local card = paint(rect(parent, x, y, w, 58, palette[2], Library.Design.CardRadius), 2)
-    card.BackgroundTransparency = Library.Design.CardTransparency
-    new("UIStroke", card, {Color = palette[5], Thickness = 1,
-        Transparency = Library.Design.StrokeTransparency, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    local card = surface(parent, x, y, w, 58, tab and tab.IsGroup)
     card.Name = name
     local title = text(card, name, 10, 10, w - 70, 14, 12, white)
     if opts.Description then
@@ -4758,10 +4840,10 @@ local function makeSlider(tab, parent, x, y, w, opts)
     end
     local valueLabel = text(card, "", w - 55, 10, 45, 14, 12, white, "right")
 
-    local track = paint(rect(card, 10, 38, w - 20, 8, palette[1], 8), 1)
-    local fillClip = transparent(track, 0, 0, 0, 8)
+    local track = paint(rect(card, 10, 39, w - 20, 6, palette[4], 3), 4)
+    local fillClip = transparent(track, 0, 0, 0, 6)
     fillClip.ClipsDescendants = true
-    local fill = rect(fillClip, 0, 0, w - 20, 8, accent, 8)
+    local fill = rect(fillClip, 0, 0, w - 20, 6, accent, 3)
     new("UIGradient", fill, {
         Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0, 0.3),
@@ -6729,12 +6811,8 @@ function Tab:AddCardGrid(opts)
         surface.ZIndex = 3
         local body = rect(surface, 0, 0, tileW, tileH, palette[4])
         body.Name = "Background"
-        body.BackgroundTransparency = 0.16
+        body.BackgroundTransparency = 0
         body.ZIndex = 3
-        new("UIGradient", body, {
-            Rotation = 105,
-            Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(220, 220, 220)),
-        })
         local stroke = new("UIStroke", tile, {Thickness = 1, Transparency = 0.45})
         stroke.Color = palette[5]
         stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -6752,7 +6830,7 @@ function Tab:AddCardGrid(opts)
         local holder
         if imageBackground then
             holder = rect(surface, inset, inset, imgW, imageH, palette[1], innerRadius)
-            holder.BackgroundTransparency = 0.35
+            holder.BackgroundTransparency = 0
         else
             holder = rect(surface, inset, inset, imgW, imageH, palette[1], innerRadius)
             holder.BackgroundTransparency = 1
@@ -7354,13 +7432,12 @@ function Library:NotifyCards(opts)
     panel.AnchorPoint=Vector2.new(0,0)
     panel.ZIndex=80
     panel.GroupTransparency=1
-    panel.BackgroundTransparency=0.20
+    panel.BackgroundTransparency=0
     panel.ClipsDescendants=true
     maid:Add(panel)
     api.Object=panel
     local scale=new("UIScale",panel,{Scale=1})
     new("UIStroke",panel,{Color=colors[5],Thickness=1,Transparency=0.56})
-    new("UIGradient",panel,{Rotation=105,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(220,220,220))})
     local function label(parent,caption,x,y,w,h,size,color,bold)
         return new("TextLabel",parent,{BackgroundTransparency=1,BorderSizePixel=0,
             Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),Text=tostring(caption),
@@ -7410,8 +7487,7 @@ function Library:NotifyCards(opts)
     for index=1,3 do
         local x=10+(index-1)*94
         local group=rect(panel,x,44,88,88,colors[4],7,"CanvasGroup")
-        group.ZIndex=82;group.ClipsDescendants=true;group.BackgroundTransparency=0.16
-        new("UIGradient",group,{Rotation=105,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(220,220,220))})
+        group.ZIndex=82;group.ClipsDescendants=true;group.BackgroundTransparency=0
         local cellScale=new("UIScale",group,{Scale=1})
         local edge=new("UIStroke",group,{Color=colors[5],Thickness=1,Transparency=0.55})
         local image=new("ImageLabel",group,{Position=UDim2.fromOffset(6,6),Size=UDim2.fromOffset(76,60),
@@ -7568,11 +7644,11 @@ function Library:Notify(opts)
     local bounds = TextService:GetTextSize(body, 11, UI_FONT, Vector2.new(width - 58, 10000))
     local maximumBody = math.max(14, math.min(160, window.Viewport.Y - 90))
     local height = (title ~= "" and 26 or 10) + math.min(maximumBody, math.max(14, bounds.Y)) + 10
-    local object = rect(window.NotifyHolder, width + 10, 0, width, height, palette[2], 8, "TextButton")
+    local object = rect(window.NotifyHolder, width + 10, 0, width, height, palette[2], 6, "TextButton")
     object.Name = "Notification"
-    object.BackgroundTransparency = 0.20
+    object.BackgroundTransparency = 0
     object.ClipsDescendants = true
-    new("UIStroke", object, {Color = palette[5], Thickness = 1, Transparency = 0.65})
+    new("UIStroke", object, {Color = palette[6], Thickness = 1, Transparency = 0.2})
     local bar = rect(object, 0, 0, 2, height, accent)
     local progress = rect(object, 0, height - 2, width, 2, accent)
     progress.BackgroundTransparency = 0.35
@@ -7924,10 +8000,10 @@ function Library:Dialog(opts)
     shade.Size, shade.BackgroundTransparency, shade.ZIndex, shade.Active = UDim2.fromScale(1, 1), 1, 90, true
     maid:Add(shade)
     api.Object = shade
-    local card = rect(shade, 0, 0, width, height, palette[2], 10, "CanvasGroup")
+    local card = rect(shade, 0, 0, width, height, palette[2], 6, "CanvasGroup")
     card.AnchorPoint, card.Position, card.ZIndex = Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5), 91
-    card.GroupTransparency, card.BackgroundTransparency, card.ClipsDescendants = 1, 0.20, true
-    new("UIStroke", card, {Color = palette[5], Thickness = 1, Transparency = 0.55})
+    card.GroupTransparency, card.BackgroundTransparency, card.ClipsDescendants = 1, 0, true
+    new("UIStroke", card, {Color = palette[6], Thickness = 1, Transparency = 0.2})
     local scale = new("UIScale", card, {Scale = 1})
     local function layout()
         local view = window.Gui.AbsoluteSize
