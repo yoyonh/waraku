@@ -12,6 +12,7 @@ end
 -- Builder Sans with a Gotham fallback for older clients.
 local UI_FONT = fontOr("BuilderSans", Enum.Font.Gotham)
 local UI_FONT_BOLD = fontOr("BuilderSansBold", Enum.Font.GothamSemibold)
+local UI_FONT_MEDIUM = fontOr("BuilderSansMedium", Enum.Font.GothamMedium)
 local FONT_SIZE_BIAS = UI_FONT == Enum.Font.Gotham and 0 or 1
 
 local player = Players.LocalPlayer
@@ -841,7 +842,7 @@ end
 
 -- Palette slots: 1 window, 2 surface, 3 muted text, 4 control fill, 5 stroke, 6 strong stroke, 7 text.
 local themes = {
-    {{11, 12, 15}, {18, 19, 23}, {124, 128, 142}, {28, 30, 36}, {34, 36, 43}, {52, 55, 65}, {235, 237, 242}},
+    {{11, 11, 13}, {15, 15, 17}, {138, 138, 147}, {24, 24, 27}, {31, 31, 35}, {44, 44, 50}, {237, 237, 240}},
     {{14, 14, 14}, {21, 21, 21}, {133, 133, 133}, {31, 31, 31}, {37, 37, 37}, {58, 58, 58}, {238, 238, 238}},
     {{10, 14, 20}, {16, 22, 30}, {116, 134, 156}, {24, 32, 43}, {30, 40, 53}, {48, 62, 80}, {228, 236, 246}},
     {{16, 11, 14}, {24, 17, 21}, {150, 124, 136}, {35, 25, 31}, {43, 31, 38}, {66, 49, 59}, {244, 234, 239}},
@@ -850,7 +851,7 @@ local themes = {
 }
 local THEME_NAMES = {"Midnight", "Graphite", "Ocean", "Rose", "Forest", "Black"}
 local THEME_ACCENTS = {
-    Color3.fromRGB(112, 136, 255), Color3.fromRGB(226, 226, 226), Color3.fromRGB(78, 160, 255),
+    Color3.fromRGB(237, 237, 240), Color3.fromRGB(226, 226, 226), Color3.fromRGB(78, 160, 255),
     Color3.fromRGB(238, 112, 160), Color3.fromRGB(82, 198, 140), Color3.fromRGB(236, 236, 236),
 }
 for _, theme in ipairs(themes) do
@@ -890,16 +891,17 @@ local function muted(parent, value, x, y, w, h, size, align, opts)
     return api
 end
 
-local WINDOW_W, WINDOW_H = 720, 440
-local SIDEBAR_W, RAIL_W = 172, 30
+local WINDOW_W, WINDOW_H = 780, 480
+local SIDEBAR_W, RAIL_W = 168, 26
 local CONTENT_W = WINDOW_W - SIDEBAR_W - RAIL_W
-local PAD = 14
+local PAD = 16
 local W = CONTENT_W - PAD * 2
-local GAP = 10
-local TAB_SLOT = 32
-local BRAND_H = 58
-local PROFILE_H = 54
-local HEADER_H = 56
+local GAP = 14
+local TAB_SLOT = 30
+local BRAND_H = 56
+local PROFILE_H = 52
+local HEADER_H = 46
+local BLOCK_TITLE_H = 24
 local BLOCK_PAD = 8
 local BLOCK_GAP = 6
 
@@ -915,12 +917,12 @@ local INTERNAL_FLAGS = {
 }
 
 local Library = {
-    Version = "10.0.0",
+    Version = "11.0.0",
     Capabilities = table.freeze({Layout = 3, Groups = 1, Blocks = 1, Themes = 1, NotificationCenter = 1, CardNotifications = 1, ConditionalColors = 1, ConfigRestore = 2, ESPPreview = 1}),
-    Design = table.freeze({CardRadius = 6, PopupRadius = 6, ControlRadius = 4, RowRadius = 4,
+    Design = table.freeze({CardRadius = 6, PopupRadius = 6, ControlRadius = 5, RowRadius = 4,
         CardTransparency = 0, StrokeTransparency = 0, RowTransparency = 1, RowStrokeTransparency = 1,
-        RowHoverTransparency = 0.965, DividerInset = 10,
-        HoverStrokeTransparency = 0, EnterDuration = 0.38, EnterStagger = 0.035, EnterRise = 12,
+        RowHoverTransparency = 0.975, DividerInset = 0, BlockColumns = 2, BlockIcons = false,
+        HoverStrokeTransparency = 0, EnterDuration = 0.34, EnterStagger = 0.03, EnterRise = 6,
         Gap = 10, Padding = 10, BlockPadding = BLOCK_PAD, BlockGap = BLOCK_GAP}),
     NotificationOptions = {Width = 250, MaxVisible = 5, Position = "Right", Gap = 8, PauseOnHover = true},
     Flags = {},
@@ -1632,8 +1634,8 @@ function Library:CreateWindow(opts)
     local sizeX, sizeY
     if typeof(requested) == "Vector2" then sizeX, sizeY = requested.X, requested.Y
     elseif type(requested) == "table" then sizeX, sizeY = requested.X or requested[1], requested.Y or requested[2] end
-    WINDOW_W = math.clamp(math.floor(tonumber(sizeX or opts.Width) or 720), 600, 1100)
-    WINDOW_H = math.clamp(math.floor(tonumber(sizeY or opts.Height) or 440), 360, 800)
+    WINDOW_W = math.clamp(math.floor(tonumber(sizeX or opts.Width) or 780), 600, 1100)
+    WINDOW_H = math.clamp(math.floor(tonumber(sizeY or opts.Height) or 480), 360, 800)
     CONTENT_W, W = WINDOW_W - SIDEBAR_W - RAIL_W, WINDOW_W - SIDEBAR_W - RAIL_W - PAD * 2
     if type(opts.Notifications) == "table" then self:SetNotificationOptions(opts.Notifications) end
 
@@ -1929,26 +1931,30 @@ function Library:CreateWindow(opts)
     window.Sidebar = sidebar
     local sidebarEdge = paint(rect(frame, SIDEBAR_W - 1, 0, 1, WINDOW_H, palette[5]), 5)
     sidebarEdge.Name = "SidebarEdge"
+    window.ShowTabIcons = opts.TabIcons == true
 
+    -- Brand: inverted logo chip and the window name. Doubles as a drag handle.
+    local brandName = tostring(opts.Title or opts.Name or "WolfUi")
     local logoHit = transparent(sidebar, 0, 0, SIDEBAR_W - 1, BRAND_H, "TextButton")
     logoHit.Name = "Brand"
-    local logoIcon = iconLabel(logoHit, windowIcon, 18, (BRAND_H - 18) / 2, 18, accent,
-        string.sub(opts.Name or "W", 1, 1))
-    local brandW = SIDEBAR_W - 60
-    local brandTitle = text(logoHit, opts.Title or opts.Name or "WolfUi", 46, BRAND_H / 2 - 15, brandW, 16, 13, white,
-        nil, {Bold = true})
-    local brandCaption = muted(logoHit, opts.Subtitle or ("v" .. tostring(Library.Version)), 46, BRAND_H / 2 + 1,
-        brandW, 14, 11)
+    local logoChip = paint(rect(logoHit, 16, (BRAND_H - 22) / 2, 22, 22, palette[7], 5), 7)
+    local logoIcon = iconLabel(logoChip, windowIcon, 4, 4, 14, palette[1], string.sub(brandName, 1, 1))
+    local hasSubtitle = opts.Subtitle ~= nil
+    local brandTitle = text(logoHit, brandName, 46, hasSubtitle and BRAND_H / 2 - 14 or 0, SIDEBAR_W - 60,
+        hasSubtitle and 15 or BRAND_H, 13, white, nil, {Bold = true})
+    local brandCaption = muted(logoHit, hasSubtitle and tostring(opts.Subtitle) or "", 46, BRAND_H / 2 + 1,
+        SIDEBAR_W - 60, 13, 10)
+    brandCaption.Object.Visible = hasSubtitle
     step(function()
-        logoIcon:Color(accent)
-        logoIcon:Alpha(state.AccentAlpha)
+        logoChip.BackgroundColor3 = palette[7]
+        logoIcon:Color(palette[1])
     end, logoHit)
 
     window.LogoIcon = logoIcon
     window.BrandTitle = brandTitle
     window.BrandCaption = brandCaption
     window.Icon = windowIcon
-    window.IconFallback = string.sub(opts.Name or "W", 1, 1)
+    window.IconFallback = string.sub(brandName, 1, 1)
 
     local dragStart, windowStart
     local function moveWindow(point, initial)
@@ -1961,7 +1967,7 @@ function Library:CreateWindow(opts)
     end
     draggable(logoHit, moveWindow)
 
-    local showProfile = opts.Profile ~= false
+    local showProfile = opts.Profile == true
     local profileH = showProfile and PROFILE_H or 0
     if showProfile then
         local profile = transparent(sidebar, 0, WINDOW_H - PROFILE_H, SIDEBAR_W - 1, PROFILE_H)
@@ -1970,26 +1976,24 @@ function Library:CreateWindow(opts)
         local avatar = new("ImageLabel", profile, {
             BackgroundColor3 = palette[4],
             BorderSizePixel = 0,
-            Position = UDim2.fromOffset(16, (PROFILE_H - 26) / 2),
-            Size = UDim2.fromOffset(26, 26),
+            Position = UDim2.fromOffset(16, (PROFILE_H - 24) / 2),
+            Size = UDim2.fromOffset(24, 24),
             Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(player.UserId) .. "&w=48&h=48",
             ZIndex = 2,
         })
         themedBackgrounds[avatar] = 4
-        new("UICorner", avatar, {CornerRadius = UDim.new(0, 4)})
-        local nameW = SIDEBAR_W - 60
-        text(profile, player.DisplayName, 50, PROFILE_H / 2 - 14, nameW, 14, 12, white)
-        muted(profile, "@" .. player.Name, 50, PROFILE_H / 2 + 1, nameW, 13, 11)
+        new("UICorner", avatar, {CornerRadius = UDim.new(0, 5)})
+        text(profile, player.DisplayName, 48, PROFILE_H / 2 - 13, SIDEBAR_W - 60, 13, 12, white)
+        muted(profile, "@" .. player.Name, 48, PROFILE_H / 2 + 1, SIDEBAR_W - 60, 12, 10)
         window.Profile = profile
     end
 
-    local tabTop = BRAND_H
     local tabHolder = new("ScrollingFrame", sidebar, {
         Name = "Tabs",
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(6, tabTop),
-        Size = UDim2.fromOffset(SIDEBAR_W - 13, WINDOW_H - tabTop - profileH - 8),
+        Position = UDim2.fromOffset(0, BRAND_H),
+        Size = UDim2.fromOffset(SIDEBAR_W - 1, WINDOW_H - BRAND_H - profileH - 8),
         CanvasSize = UDim2.fromOffset(0, 0),
         ScrollBarThickness = 0,
         ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -1999,41 +2003,71 @@ function Library:CreateWindow(opts)
     })
     window.TabHolder = tabHolder
 
+    -- Tabs stack top to bottom; a caption is inserted wherever opts.Section changes.
+    function window.LayoutTabs()
+        local y, previous = 0, nil
+        for index, tab in ipairs(window.TabList) do
+            tab.Index = index
+            local section = tab.Section
+            if tab.SectionLabel then
+                local show = section ~= nil and section ~= previous
+                tab.SectionLabel.Object.Visible = show
+                if show then
+                    y = y + (index > 1 and 12 or 2)
+                    tab.SectionLabel.Object.Position = UDim2.fromOffset(18, y)
+                    y = y + 20
+                end
+            end
+            previous = section
+            tab.NavY = y
+            tab.Button.Position = UDim2.fromOffset(8, y)
+            y = y + TAB_SLOT
+        end
+        tabHolder.CanvasSize = UDim2.fromOffset(0, y + 4)
+    end
+
     -- One shared highlight springs between tabs.
-    local navHighlight = paint(rect(tabHolder, 6, 2, SIDEBAR_W - 24, TAB_SLOT - 4, palette[4], 4), 4)
+    local navHighlight = paint(rect(tabHolder, 8, 0, SIDEBAR_W - 17, TAB_SLOT - 2, palette[4], 5), 4)
     navHighlight.Name = "ActiveHighlight"
     navHighlight.ZIndex = 0
     navHighlight.BackgroundTransparency = 1
     local navY, navVelocity, navAlpha = nil, 0, 0
     step(function(dt, k)
         local tab = window.Current
-        local target = tab and ((tab.Index - 1) * TAB_SLOT + 2) or navY or 2
+        local target = tab and tab.NavY or navY or 0
         if not navY or Library.FadeAnimations == false then
             navY, navVelocity = target, 0
         else
-            navY, navVelocity = spring(navY, navVelocity, target, 28, dt)
+            navY, navVelocity = spring(navY, navVelocity, target, 30, dt)
             if navY ~= target then window.Animating = true end
         end
         navAlpha = approach(navAlpha, tab and 1 or 0, k)
-        navHighlight.Position = UDim2.fromOffset(6, roundPixel(navY))
+        navHighlight.Position = UDim2.fromOffset(8, roundPixel(navY))
         navHighlight.BackgroundColor3 = palette[4]
         navHighlight.BackgroundTransparency = 1 - navAlpha
     end, navHighlight)
     window.NavHighlight = navHighlight
 
-    -- Header: active tab title and description over a hairline.
-    -- The drag area stops short of the rail so rail buttons stay clickable.
+    -- Header: "Brand / Tab" breadcrumb, optional description on the right.
     local headerW = WINDOW_W - SIDEBAR_W - RAIL_W
     local header = transparent(frame, SIDEBAR_W, 0, headerW, HEADER_H)
     header.Name = "Header"
     local headerRule = paint(rect(frame, SIDEBAR_W, HEADER_H - 1, WINDOW_W - SIDEBAR_W, 1, palette[5]), 5)
     headerRule.Name = "HeaderRule"
-    local headerTitle = text(header, "", PAD + 6, 0, headerW - PAD * 2, 18, 15, white, nil, {Bold = true})
-    local headerCaption = muted(header, "", PAD + 6, 0, headerW - PAD * 2, 14, 11)
+    local crumbX = PAD + 4
+    local crumbRoot = muted(header, brandName, crumbX, 0, 200, HEADER_H, 12)
+    local rootW = math.ceil(TextService:GetTextSize(brandName, 12 + FONT_SIZE_BIAS, UI_FONT, Vector2.new(400, 40)).X)
+    local crumbSlash = text(header, "/", crumbX + rootW + 10, 0, 10, HEADER_H, 12, palette[6], "center")
+    themedLabels[crumbSlash.Object] = 6
+    local titleX = crumbX + rootW + 30
+    local headerTitle = text(header, "", titleX, 0, headerW - titleX - 12, HEADER_H, 12, white, nil,
+        {Font = UI_FONT_MEDIUM})
+    local headerCaption = muted(header, "", titleX, 0, headerW - titleX - 12, HEADER_H, 11, "right")
     draggable(header, moveWindow, nil, DRAG_THRESHOLD)
     window.Header = header
     window.HeaderTitle = headerTitle
     window.HeaderCaption = headerCaption
+    window.HeaderRoot = crumbRoot
 
     local shownTab = false
     local headerSlide = 0
@@ -2043,17 +2077,13 @@ function Library:CreateWindow(opts)
             shownTab = tab
             if Library.FadeAnimations ~= false then headerSlide = 1 end
         end
-        headerSlide = approach(headerSlide, 0, motionFactor(12, dt))
+        headerSlide = approach(headerSlide, 0, motionFactor(14, dt))
         if headerSlide < 0.004 then headerSlide = 0 else window.Animating = true end
-        local caption = tab and tab.Description and tostring(tab.Description) or ""
         headerTitle:SetText(tab and tostring(tab.Title or tab.Name) or "")
-        headerCaption:SetText(caption)
-        local rise = roundPixel(easeOutQuint(headerSlide) * 6)
-        local titleY = caption ~= "" and (HEADER_H / 2 - 17) or (HEADER_H / 2 - 9)
-        headerTitle.Object.Position = UDim2.fromOffset(PAD + 6, titleY + rise)
-        headerCaption.Object.Position = UDim2.fromOffset(PAD + 6, HEADER_H / 2 + 3 + rise)
-        headerCaption.Object.Visible = caption ~= ""
-        headerTitle:Alpha(1 - headerSlide * 0.9)
+        headerCaption:SetText(tab and tab.Description and tostring(tab.Description) or "")
+        local shift = roundPixel(easeOutQuint(headerSlide) * 6)
+        headerTitle.Object.Position = UDim2.fromOffset(titleX + shift, 0)
+        headerTitle:Alpha(1 - headerSlide)
         headerCaption:Alpha(1 - headerSlide)
     end, header)
 
@@ -2136,7 +2166,7 @@ function Library:CreateWindow(opts)
 
     function window:AddRailButton(config)
         config = config or {}
-        local y = 10 + self.RailCount * 20
+        local y = (HEADER_H - 18) / 2 + 4 + self.RailCount * 22
         self.RailCount = self.RailCount + 1
         local hit = transparent(rail, 6, y - 4, 18, 18, "TextButton")
         local icon = iconLabel(hit, config.Icon or {"circle"}, 4, 4, 10, palette[3], config.Fallback or "*")
@@ -3288,17 +3318,25 @@ function Window:CreateTab(opts)
     self.Tabs[name] = tab
     self.TabList[index] = tab
 
-    local top = (index - 1) * TAB_SLOT
-    local rowW = SIDEBAR_W - 24
-    local hit = rect(self.TabHolder, 6, top + 2, rowW, TAB_SLOT - 4, palette[4], 4, "TextButton")
+    local rowW = SIDEBAR_W - 17
+    local hit = rect(self.TabHolder, 8, 0, rowW, TAB_SLOT - 2, palette[4], 5, "TextButton")
     hit.Name = name
     hit.BackgroundTransparency = 1
-    local icon = iconLabel(hit, opts.Icon or {"circle"}, 12, (TAB_SLOT - 4 - 15) / 2, 15, palette[3],
+    local showIcon = self.ShowTabIcons == true
+    local icon = iconLabel(hit, opts.Icon or {"circle"}, 10, (TAB_SLOT - 2 - 14) / 2, 14, palette[3],
         opts.Fallback or string.sub(name, 1, 1))
-    local title = text(hit, opts.Title or name, 36, 0, rowW - 44, TAB_SLOT - 4, 12, palette[3])
-    self.TabHolder.CanvasSize = UDim2.fromOffset(0, index * TAB_SLOT + 4)
+    icon.Object.Visible = showIcon
+    local titleX = showIcon and 32 or 10
+    local title = text(hit, opts.Title or name, titleX, 0, rowW - titleX - 8, TAB_SLOT - 2, 12, palette[3])
     tab.IconValue = opts.Icon or {"circle"}
     tab.Description = opts.Description or opts.Subtitle
+    tab.Button = hit
+    if opts.Section ~= nil then
+        tab.Section = tostring(opts.Section)
+        tab.SectionLabel = muted(self.TabHolder, string.upper(tab.Section), 18, 0, rowW - 20, 14, 10, nil,
+            {Bold = true})
+    end
+    self.LayoutTabs()
 
     connect(hit.Activated, function() self:SelectTab(tab) end, tab.Maid)
     if opts.Tooltip then self:Tooltip(hit, opts.Tooltip) end
@@ -3307,26 +3345,23 @@ function Window:CreateTab(opts)
     connect(hit.MouseEnter, function() hover = true end, tab.Maid)
     connect(hit.MouseLeave, function() hover = false end, tab.Maid)
 
-    local alpha, hoverAlpha, tint = 0, 0, palette[3]
+    local hoverAlpha, tint = 0, palette[3]
     local update = step(function(dt, k)
         local active = self.Current == tab
-        alpha = approach(alpha, active and 1 or 0, k)
         hoverAlpha = approach(hoverAlpha, (hover and not active) and 1 or 0, k)
-        tint = tint:Lerp(active and white or palette[3]:Lerp(white, hoverAlpha * 0.6), k)
+        tint = tint:Lerp(active and white or palette[3]:Lerp(white, hoverAlpha * 0.7), k)
         hit.BackgroundColor3 = palette[4]
-        hit.BackgroundTransparency = 1 - hoverAlpha * 0.55
-        title.Object.Position = UDim2.fromOffset(36 + roundPixel(alpha * 3), 0)
-        icon.Object.Position = UDim2.fromOffset(12 + roundPixel(alpha * 3), (TAB_SLOT - 4 - 15) / 2)
-        icon:Color(palette[3]:Lerp(accent, alpha):Lerp(white, hoverAlpha * 0.6))
+        hit.BackgroundTransparency = 1 - hoverAlpha * 0.5
+        icon:Color(tint)
         title:Color(tint)
     end, hit)
     tab.Maid:Add(function() update.Alive, update.Callback, update.Object = false, nil, nil end)
 
-    tab.Button = hit
     tab.Icon = icon
     tab.TitleLabel = title
     tab.Maid:Add(page)
     tab.Maid:Add(hit)
+    if tab.SectionLabel then tab.Maid:Add(tab.SectionLabel.Object) end
     function tab:Destroy()
         if self.Destroyed then return end
         self.Destroyed = true
@@ -3340,11 +3375,7 @@ function Window:CreateTab(opts)
             if other == self then table.remove(window.TabList, i) break end
         end
         window.Tabs[self.Name] = nil
-        for i, other in ipairs(window.TabList) do
-            other.Index = i
-            other.Button.Position = UDim2.fromOffset(6, (i - 1) * TAB_SLOT + 2)
-        end
-        window.TabHolder.CanvasSize = UDim2.fromOffset(0, #window.TabList * TAB_SLOT + 4)
+        window.LayoutTabs()
         if window.Current == self then
             window.Current = nil
             if window.TabList[1] then window:SelectTab(window.TabList[1]) end
@@ -3382,30 +3413,74 @@ function Tab:_width(value)
     local total = self:_pageWidth()
     local fraction = tonumber(value)
     if not fraction or fraction <= 0 or fraction >= 1 then return total end
-    local columns = math.clamp(math.floor(1 / fraction + 0.5), 1, math.max(1, math.floor((total + (self.Gap or GAP)) / (70 + (self.Gap or GAP)))))
+    local columns = math.clamp(math.floor(1 / fraction + 0.5), 1, math.max(1, math.floor((total + (self.Gap or GAP)) / (56 + (self.Gap or GAP)))))
     return math.floor((total - (self.Gap or GAP) * (columns - 1)) / columns)
 end
 
+-- Shared placement for _place and Reflow. Tab pages use a two-column masonry grid:
+-- half-width items drop into the shorter column, full-width items span both.
+-- Anything else (custom fractions, rows inside blocks) flows left to right.
+local function placeItem(self, st, w, h, brk)
+    local total, gap = self:_pageWidth(), self.Gap or GAP
+    local cursor, cols = st.Cursor, st.Columns
+    if brk then
+        if cursor.X > 0 then
+            cursor.Y = cursor.Y + cursor.RowHeight + gap
+            cursor.X, cursor.RowHeight = 0, 0
+        end
+        if cols then
+            local top = math.max(cols[1], cols[2])
+            cols[1], cols[2] = top, top
+        end
+    end
+    if cols then
+        local col = math.floor((total - gap) / 2)
+        local span = math.abs(w - total) < 1 and 2 or (math.abs(w - col) <= 1 and 1 or nil)
+        if span then
+            local x, y
+            if span == 2 then
+                x, y = 0, math.max(cols[1], cols[2])
+                cols[1], cols[2] = y + h + gap, y + h + gap
+            else
+                local index = cols[2] < cols[1] and 2 or 1
+                x, y = index == 1 and 0 or total - col, cols[index]
+                cols[index] = y + h + gap
+            end
+            -- Mirror into the cursor: flow continues below, height excludes the trailing gap.
+            cursor.X, cursor.Y, cursor.RowHeight = 0, math.max(cols[1], cols[2]), -gap
+            return x, y
+        end
+    end
+    if cursor.X > 0 and cursor.X + w > total + 0.5 then
+        cursor.Y = cursor.Y + cursor.RowHeight + gap
+        cursor.X, cursor.RowHeight = 0, 0
+    end
+    local x, y = cursor.X, cursor.Y
+    cursor.X = cursor.X + w + gap
+    cursor.RowHeight = math.max(cursor.RowHeight, h)
+    if cursor.X >= total then
+        cursor.Y = cursor.Y + cursor.RowHeight + gap
+        cursor.X, cursor.RowHeight = 0, 0
+    end
+    if cols then
+        local top = cursor.X == 0 and cursor.Y or cursor.Y + cursor.RowHeight + gap
+        cols[1], cols[2] = top, top
+    end
+    return x, y
+end
+
+local function layoutColumns(self)
+    if rawget(self, "IsTabPage") and Library.Design.BlockColumns == 2 then return {0, 0} end
+    return nil
+end
+
 function Tab:_place(w, h)
-    local total = self:_pageWidth()
-    local cursor = self.Cursor
     self.LayoutItems = self.LayoutItems or {}
     local item = {Width = w, Height = h, Break = self.LayoutBreak == true}
     self.LayoutBreak = false
     self.LayoutItems[#self.LayoutItems + 1] = item
-    if cursor.X > 0 and cursor.X + w > total + 0.5 then
-        cursor.Y = cursor.Y + cursor.RowHeight + (self.Gap or GAP)
-        cursor.X = 0
-        cursor.RowHeight = 0
-    end
-    local x, y = cursor.X, cursor.Y
-    cursor.X = cursor.X + w + (self.Gap or GAP)
-    cursor.RowHeight = math.max(cursor.RowHeight, h)
-    if cursor.X >= total then
-        cursor.Y = cursor.Y + cursor.RowHeight + (self.Gap or GAP)
-        cursor.X = 0
-        cursor.RowHeight = 0
-    end
+    if self.LayoutColumns == nil then self.LayoutColumns = layoutColumns(self) or false end
+    local x, y = placeItem(self, {Cursor = self.Cursor, Columns = self.LayoutColumns or nil}, w, h, item.Break)
     item.X, item.Y = x, y
     return x, y
 end
@@ -3417,6 +3492,11 @@ function Tab:_newline()
         cursor.Y = cursor.Y + cursor.RowHeight + (self.Gap or GAP)
         cursor.X = 0
         cursor.RowHeight = 0
+    end
+    local cols = self.LayoutColumns
+    if cols then
+        local top = math.max(cols[1], cols[2])
+        cols[1], cols[2] = top, top
     end
 end
 
@@ -3537,25 +3617,16 @@ function Tab:Reflow()
     if self.Destroyed or self.Reflowing then return end
     if (self.LayoutDepth or 0) > 0 then self.LayoutDirty = true return end
     self.LayoutDirty, self.Reflowing = false, true
-    local cursor, total = {X = 0, Y = 0, RowHeight = 0}, self:_pageWidth()
+    local st = {Cursor = {X = 0, Y = 0, RowHeight = 0}, Columns = layoutColumns(self)}
     for _, item in ipairs(self.LayoutItems or {}) do
         local object = item.Object
         if not item.Removed and (not object or object.Parent and object.Visible) then
-            if cursor.X > 0 and (item.Break or cursor.X + item.Width > total + 0.5) then
-                cursor.Y = cursor.Y + cursor.RowHeight + (self.Gap or GAP)
-                cursor.X, cursor.RowHeight = 0, 0
-            end
-            item.X, item.Y = cursor.X, cursor.Y
+            item.X, item.Y = placeItem(self, st, item.Width, item.Height, item.Break)
             if object then object.Position = UDim2.fromOffset(item.X, item.Y) end
-            cursor.X = cursor.X + item.Width + (self.Gap or GAP)
-            cursor.RowHeight = math.max(cursor.RowHeight, item.Height)
-            if cursor.X >= total then
-                cursor.Y = cursor.Y + cursor.RowHeight + (self.Gap or GAP)
-                cursor.X, cursor.RowHeight = 0, 0
-            end
         end
     end
-    self.Cursor = cursor
+    self.Cursor = st.Cursor
+    self.LayoutColumns = st.Columns or false
     self:_grow()
     if self.Window and self.Window.Current == self then
         local scroll = self.Window.Scroll
@@ -4023,41 +4094,44 @@ local function attachSettings(tab, parent, x, y, size, opts)
     return menu
 end
 
+-- A block is a small caption above a bordered box. Rows inside the box are flat and
+-- divided by hairlines. On tab pages blocks default to half width (two columns).
 local function buildBlock(self, opts, isBlock)
-    local parent, w = self, self:_width(opts.Width)
+    local parent = self
+    local defaultWidth = rawget(self, "IsTabPage") and Library.Design.BlockColumns == 2 and 0.5 or nil
+    local w = self:_width(opts.Width or defaultWidth)
     local title = tostring(opts.Title or opts.Name or (isBlock and "Block" or "Group"))
     local description = opts.Description ~= nil and tostring(opts.Description) or nil
-    local headerH = description and 48 or 38
+    local headerH = description and 40 or BLOCK_TITLE_H
     local collapsible = opts.Collapsible ~= false
-    local showCount = opts.ShowCount == true
     local card = self:_card(w, headerH, title)
+    card.BackgroundTransparency = 1
+    for _, child in ipairs(card:GetChildren()) do
+        if child:IsA("UIStroke") then child:Destroy() end
+    end
     card.ClipsDescendants = true
     local header = transparent(card, 0, 0, w, headerH, collapsible and "TextButton" or "Frame")
     header.Name = "Header"
-    local textX = 12
+    local textX = 2
     local icon
-    if opts.Icon then
-        icon = iconLabel(header, opts.Icon, 12, description and 10 or (headerH - 13) / 2, 13, palette[3],
-            string.sub(title, 1, 1))
-        textX = 32
+    if opts.Icon and Library.Design.BlockIcons then
+        icon = iconLabel(header, opts.Icon, 2, 3, 12, palette[3], string.sub(title, 1, 1))
+        textX = 20
     end
-    local rightW = (collapsible and 28 or 4) + (showCount and 32 or 0)
-    local textW = w - textX - rightW
-    local titleLabel = text(header, title, textX, description and 9 or 0, textW,
-        description and 16 or headerH, 12, white, nil, {Bold = true})
-    local caption = description and muted(header, description, textX, 26, textW, 14, 11) or nil
-    local countLabel
-    if showCount then
-        countLabel = muted(header, "0", w - rightW, 0, 26, headerH, 11, "right")
-    end
-    local arrow = collapsible and iconLabel(header, {"chevron-right"}, w - 26, (headerH - 12) / 2, 12,
-        palette[3], ">") or nil
-    local separator = paint(rect(card, 0, headerH, w, 1, palette[5]), 5)
-    local blockStroke = card:FindFirstChildOfClass("UIStroke")
+    local titleLabel = text(header, title, textX, 0, w - textX - 24, 18, 11, palette[3], nil, {Font = UI_FONT_MEDIUM})
+    themedLabels[titleLabel.Object] = 3
+    local caption = description and muted(header, description, textX, 19, w - textX - 24, 14, 10) or nil
+    local arrow = collapsible and iconLabel(header, {"chevron-down"}, w - 14, 3, 11, palette[3], "v") or nil
+    if arrow then arrow:Alpha(0) end
+    local box = paint(rect(card, 0, headerH, w, 0, palette[2], Library.Design.CardRadius), 2)
+    box.Name = "Box"
+    box.ClipsDescendants = true
+    local blockStroke = new("UIStroke", box, {Color = palette[5], Thickness = 1, Transparency = 0,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
     local cardHover = false
     connect(card.MouseEnter, function() cardHover = true end)
     connect(card.MouseLeave, function() cardHover = false end)
-    local body = transparent(card, 0, headerH + 1, w, 1)
+    local body = transparent(box, 0, 0, w, 1)
     local group = setmetatable({Object = card, Page = body, Window = self.Window,
         -- Blocks share the tab's Name so default element flags stay identical to pre-block layouts.
         Name = isBlock and parent.Name or title, Title = title, Description = description,
@@ -4068,13 +4142,12 @@ local function buildBlock(self, opts, isBlock)
     local shown, velocity = headerH, 0
     local function sizeTarget()
         local empty = group.Height <= 0
-        -- The final row's divider falls on the block border, so trim it.
+        -- The final row's divider lands on the box border, which hides it.
         group.TargetHeight = (group.Collapsed or empty) and headerH
             or headerH + group.Height
         if group.Collapsed then self.Window.Opened = nil end
         body.Visible = not group.Collapsed
         body.Interactable = not group.Collapsed
-        separator.Visible = not group.Collapsed and not empty
         self.Window:Wake()
     end
     group.OnResize = sizeTarget
@@ -4084,6 +4157,8 @@ local function buildBlock(self, opts, isBlock)
         if instant then
             shown, velocity = self.TargetHeight, 0
             card.Size = UDim2.fromOffset(w, roundPixel(shown))
+            box.Size = UDim2.fromOffset(w, math.max(0, roundPixel(shown - headerH)))
+            box.Visible = shown - headerH >= 1
             parent:_track(card)
             parent:Reflow()
         end
@@ -4115,7 +4190,7 @@ local function buildBlock(self, opts, isBlock)
         end
         self.Destroyed = true
     end
-    local hover, hoverAlpha, arrowRotation = false, 0, group.Collapsed and 0 or 90
+    local hover, hoverAlpha, arrowRotation = false, 0, group.Collapsed and -90 or 0
     if collapsible then
         connect(header.MouseEnter, function() hover = true end)
         connect(header.MouseLeave, function() hover = false end)
@@ -4124,14 +4199,15 @@ local function buildBlock(self, opts, isBlock)
     step(function(dt, k)
         if group.Destroyed then return end
         hoverAlpha = approach(hoverAlpha, (cardHover or hover) and 1 or 0, k)
-        if blockStroke then
-            blockStroke.Color = palette[5]:Lerp(palette[6], hoverAlpha)
-        end
+        blockStroke.Color = palette[5]:Lerp(palette[6], hoverAlpha)
+        titleLabel:Color(palette[3]:Lerp(white, hover and 0.6 or 0))
         if arrow then
-            arrow:Color(palette[3]:Lerp(white, hover and 0.7 or 0))
-            arrowRotation = approach(arrowRotation, group.Collapsed and 0 or 90, motionFactor(16, dt))
-            arrow.Object.Rotation = math.abs(arrowRotation - (group.Collapsed and 0 or 90)) < 0.3
-                and (group.Collapsed and 0 or 90) or arrowRotation
+            -- The chevron only appears on hover or while collapsed.
+            arrow:Color(palette[3])
+            arrow:Alpha((hover or group.Collapsed) and 1 or hoverAlpha * 0.5)
+            arrowRotation = approach(arrowRotation, group.Collapsed and -90 or 0, motionFactor(16, dt))
+            arrow.Object.Rotation = math.abs(arrowRotation - (group.Collapsed and -90 or 0)) < 0.3
+                and (group.Collapsed and -90 or 0) or arrowRotation
         end
         local nextHeight
         if Library.FadeAnimations == false then
@@ -4143,11 +4219,12 @@ local function buildBlock(self, opts, isBlock)
         if math.abs(nextHeight - shown) > 0.001 then
             shown = nextHeight
             card.Size = UDim2.fromOffset(w, roundPixel(shown))
+            box.Size = UDim2.fromOffset(w, math.max(0, roundPixel(shown - headerH)))
+            box.Visible = shown - headerH >= 1
         end
-        if icon then icon:Color(palette[3]:Lerp(white, hoverAlpha * 0.5)) end
-        if countLabel then countLabel:SetText(tostring(#group.Elements)) end
+        if icon then icon:Color(palette[3]:Lerp(white, hover and 0.6 or 0)) end
         if shown ~= group.TargetHeight or hoverAlpha > 0.001 and hoverAlpha < 0.999
-            or arrow and arrow.Object.Rotation ~= (group.Collapsed and 0 or 90) then
+            or arrow and arrow.Object.Rotation ~= (group.Collapsed and -90 or 0) then
             group.Window.Animating = true
         end
     end, card)
@@ -4575,9 +4652,9 @@ function Tab:AddColorPicker(opts)
     local name = opts.Name or "Color"
     local w = self:_width(opts.Width)
     local card = self:_card(w, 43, name)
-    local title = text(card, name, 10, opts.Description and 10 or 14.5, w - 44, 14, 12, white)
+    local title = text(card, name, 10, opts.Description and 7 or 14.5, w - 44, 14, 12, white)
     if opts.Description then
-        muted(card, opts.Description, 10, 23, w - 44, 14, 11)
+        muted(card, opts.Description, 10, 22, w - 44, 14, 11)
     end
     local picker = attachColorPicker(self, card, w - 24, 14.5, 14, opts)
     local api = baseApi(self, card, picker.Flag)
@@ -4596,6 +4673,7 @@ local function attachKeybind(tab, parent, x, y, w, h, opts)
     if type(key) == "string" then key = keyFromName(key) end
 
     local button = paint(rect(parent, x, y, w, h, palette[4], 4, "TextButton"), 4)
+    new("UIStroke", button, {Color = palette[5], Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
     button.ZIndex = 3
     local caption = text(button, keyName(key), 0, 0, w, h, 10, palette[3], "center")
 
@@ -4660,11 +4738,11 @@ function Tab:AddKeybind(opts)
     local name = opts.Name or "Keybind"
     local w = self:_width(opts.Width)
     local card = self:_card(w, 43, name)
-    local title = text(card, name, 10, opts.Description and 10 or 14.5, w - 66, 14, 12, white)
+    local title = text(card, name, 10, opts.Description and 7 or 14.5, w - 66, 14, 12, white)
     if opts.Description then
-        muted(card, opts.Description, 10, 23, w - 76, 14, 11)
+        muted(card, opts.Description, 10, 22, w - 76, 14, 11)
     end
-    local bind = attachKeybind(self, card, w - 56, 14.5, 46, 14, opts)
+    local bind = attachKeybind(self, card, w - 80, 12.5, 70, 18, opts)
     local api = baseApi(self, card, bind.Flag)
     api.Get = function(_) return bind:Get() end
     api.Set = function(_, value, silent) bind:Set(value, silent) end
@@ -4703,7 +4781,7 @@ function Tab:AddToggle(opts)
             local object = item.Object
             if object.Visible then
                 right = right - 10 - item.Width
-                object.Position = UDim2.fromOffset(right,14.5)
+                object.Position = UDim2.fromOffset(right, roundPixel((43 - object.Size.Y.Offset) / 2))
             end
         end
         edge = right
@@ -4753,7 +4831,7 @@ function Tab:AddToggle(opts)
         config.Flag = config.Flag or (flag .. ".Key")
         config.Name = config.Name or name
         config.Toggle = function() api:Toggle() end
-        keybind = attachKeybind(self, card, 0, 14.5, 46, 14, config)
+        keybind = attachKeybind(self, card, 0, 12.5, 46, 18, config)
         accessory(keybind.Object or keybind.Button,46)
     end
 
@@ -4764,9 +4842,9 @@ function Tab:AddToggle(opts)
         accessory(settings.AnchorObject,14)
     end
 
-    title = text(card, name, 10, opts.Description and 10 or 14.5, math.max(40, edge - 20), 14, 12, palette[3])
+    title = text(card, name, 10, opts.Description and 7 or 14.5, math.max(40, edge - 20), 14, 12, palette[3])
     if opts.Description then
-        description = muted(card, opts.Description, 10, 23, math.max(40, edge - 20), 14, 11)
+        description = muted(card, opts.Description, 10, 22, math.max(40, edge - 20), 14, 11)
     end
     bindTitle(api, title, opts)
 
@@ -4839,7 +4917,8 @@ local function makeSlider(tab, parent, x, y, w, opts)
     if opts.Description then
         muted(card, opts.Description, 10, 22, w - 20, 14, 11)
     end
-    local valueLabel = text(card, "", w - 55, 10, 45, 14, 12, white, "right")
+    local valueLabel = text(card, "", w - 75, 10, 65, 14, 11, palette[3], "right")
+    themedLabels[valueLabel.Object] = 3
 
     local track = paint(rect(card, 10, 40, w - 20, 4, palette[4], 2), 4)
     local fillClip = transparent(track, 0, 0, 0, 4)
@@ -4945,21 +5024,25 @@ function Tab:AddDropdown(opts)
 
     local w = self:_width(opts.Width)
     local hasDescription = opts.Description ~= nil and tostring(opts.Description) ~= ""
-    local controlY = hasDescription and 38 or 27
-    local card = self:_card(w, controlY + 41, name)
-    local title = text(card, name, 10, 10, w - 20, 14, 12, white)
+    -- Inline select: label on the left, compact trigger on the right.
+    local controlW = math.clamp(math.floor(w * 0.42), 96, 180)
+    local controlH = 24
+    local card = self:_card(w, 43, name)
+    local title = text(card, name, 10, hasDescription and 7 or 14.5, w - controlW - 30, 14, 12, white)
     if hasDescription then
-        muted(card, opts.Description, 10, 22, w - 20, 14, 11)
+        muted(card, opts.Description, 10, 22, w - controlW - 30, 14, 11)
     end
 
-    local controlW = w - 20
-    local control = paint(rect(card, 10, controlY, controlW, 31, palette[4], 4, "TextButton"), 4)
-    local preview = muted(control, "", 10, 0, controlW - 40, 31, 11)
+    local control = paint(rect(card, w - 10 - controlW, (43 - controlH) / 2, controlW, controlH, palette[4],
+        Library.Design.ControlRadius, "TextButton"), 4)
+    new("UIStroke", control, {Color = palette[5], Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    local preview = text(control, "", 9, 0, controlW - 30, controlH, 11, palette[3])
+    themedLabels[preview.Object] = 3
     local arrow = iconLabel(control, {"chevron-down", "chevrons-down", "arrow-down"},
-        controlW - 22, 11.5, 10, palette[3], "v")
+        controlW - 19, (controlH - 10) / 2, 10, palette[3], "v")
     if opts.Tooltip then self.Window:Tooltip(control, opts.Tooltip) end
 
-    local ROW_H = 31
+    local ROW_H = 28
 
     local maxRows = math.floor(tonumber(opts.MaxRows) or 5)
     if maxRows <= 0 then maxRows = math.max(1, #options) end
@@ -4974,7 +5057,7 @@ function Tab:AddDropdown(opts)
         local available = enabled and #options > 0
         controlGlow = approach(controlGlow, available and (controlHover or open) and 1 or 0, k)
         arrowSpin = approach(arrowSpin, open and 180 or 0, k)
-        control.BackgroundColor3 = palette[4]:Lerp(palette[5], controlGlow)
+        control.BackgroundColor3 = palette[4]:Lerp(palette[5], controlGlow * 0.8)
         arrow:Color(palette[3]:Lerp(white, controlGlow * 0.6))
         arrow:Alpha(available and 1 or 0.3)
         arrow.Object.Rotation = arrowSpin
@@ -5102,7 +5185,7 @@ function Tab:AddDropdown(opts)
                     edgeFill.BackgroundTransparency = 1
                     local result = {Object = row, Fill = edgeFill,
                         Corner = row:FindFirstChildOfClass("UICorner"),
-                        Mark = iconLabel(row, {"check"}, 0, 9.5, 12, accent, "v"),
+                        Mark = iconLabel(row, {"check"}, 0, (ROW_H - 12) / 2, 12, accent, "v"),
                         Title = text(row, option, 10, 0, controlW - 20, ROW_H, 11, palette[3]),
                         Alpha = 0, Hover = 0, Hovered = false, Index = index, Maid = rowMaid}
                     connect(row.MouseEnter, function() result.Hovered = true end)
@@ -5137,18 +5220,19 @@ function Tab:AddDropdown(opts)
             end
             entry.Alpha = approach(entry.Alpha, selected and 1 or 0, k)
             entry.Hover = approach(entry.Hover, entry.Hovered and 1 or 0, k)
-            local shade = math.max(entry.Alpha, entry.Hover * 0.5)
-            entry.Object.BackgroundColor3 = palette[5]
+            -- Hover gets a wash; selection is a trailing check and brighter text.
+            local shade = entry.Hover * 0.7
+            entry.Object.BackgroundColor3 = palette[4]
             entry.Object.BackgroundTransparency = 1 - shade
             if entry.Fill then
-                entry.Fill.BackgroundColor3 = palette[5]
+                entry.Fill.BackgroundColor3 = palette[4]
                 entry.Fill.BackgroundTransparency = 1 - shade
             end
-            entry.Title.Object.Position = UDim2.fromOffset(roundPixel(10 + 20 * entry.Alpha), 0)
+            entry.Title.Object.Position = UDim2.fromOffset(10, 0)
             entry.Title:Color(palette[3]:Lerp(white, math.max(entry.Alpha, entry.Hover * 0.6)))
-            entry.Mark.Object.Position = UDim2.fromOffset(roundPixel(10 * entry.Alpha), 10)
-            entry.Mark:Color(accent)
-            entry.Mark:Alpha(entry.Alpha * state.AccentAlpha)
+            entry.Mark.Object.Position = UDim2.fromOffset(controlW - 22, roundPixel((ROW_H - 12) / 2 + 3 * (1 - entry.Alpha)))
+            entry.Mark:Color(white)
+            entry.Mark:Alpha(entry.Alpha)
         end
     end, pop.Object)
 
@@ -5352,25 +5436,32 @@ function Tab:AddButton(opts)
     local w = self:_width(opts.Width)
     local compact = opts.Compact and true or false
     local enabled = opts.Enabled ~= false
-    local card = self:_card(w, compact and 31 or 43, name)
+    local card = self:_card(w, compact and (self.IsGroup and 40 or 31) or 43, name)
 
     -- Full buttons are rows: with Text they get a right-aligned button,
     -- otherwise the whole row is the hit target with a trailing chevron.
     local control, title
     local controlW, controlH, rowAction = w, 31, false
-    if compact then
+    if compact and self.IsGroup then
+        controlW, controlH = w - 10, 26
+        control = paint(rect(card, 5, 7, controlW, controlH, palette[4], Library.Design.ControlRadius, "TextButton"), 4)
+        new("UIStroke", control, {Color = palette[5], Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    elseif compact then
         control = paint(rect(card, 0, 0, w, 31, palette[4], 4, "TextButton"), 4)
     else
-        title = text(card, name, 10, opts.Description and 10 or 14.5, w - 150, 14, 12, white)
+        local reserve = opts.Text ~= nil and math.clamp(#tostring(opts.Text) * 7 + 40, 70, math.floor(w * 0.45) + 10) or 40
+        title = text(card, name, 10, opts.Description and 7 or 14.5, w - 10 - reserve, 14, 12, white)
         if opts.Description then
-            muted(card, opts.Description, 10, 24, w - 150, 14, 11)
+            muted(card, opts.Description, 10, 22, w - 10 - reserve, 14, 11)
         end
         if opts.Text ~= nil then
             local measured = TextService:GetTextSize(tostring(opts.Text), 11 + FONT_SIZE_BIAS, UI_FONT,
                 Vector2.new(400, 24)).X
             controlW = math.clamp(math.ceil(measured) + (opts.Icon and 45 or 28), 60, math.max(60, math.floor(w * 0.45)))
             controlH = 24
-            control = paint(rect(card, w - 10 - controlW, 9.5, controlW, 24, palette[4], 4, "TextButton"), 4)
+            control = paint(rect(card, w - 10 - controlW, 9.5, controlW, 24, palette[4],
+                Library.Design.ControlRadius, "TextButton"), 4)
+            new("UIStroke", control, {Color = palette[5], Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
         else
             rowAction, controlW, controlH = true, w, 43
             control = transparent(card, 0, 0, w, 43, "TextButton")
@@ -5534,9 +5625,9 @@ function Tab:AddSettings(opts)
     local name = opts.Name or "Settings"
     local w = self:_width(opts.Width)
     local card = self:_card(w, 43, name)
-    local title = text(card, name, 10, opts.Description and 10 or 14.5, w - 44, 14, 12, white)
+    local title = text(card, name, 10, opts.Description and 7 or 14.5, w - 44, 14, 12, white)
     if opts.Description then
-        muted(card, opts.Description, 10, 23, w - 44, 14, 11)
+        muted(card, opts.Description, 10, 22, w - 44, 14, 11)
     end
     local menu = attachSettings(self, card, w - 24, 14.5, 14, opts)
     local api = baseApi(self, card, nil)
@@ -5563,9 +5654,9 @@ function Tab:AddStepper(opts)
     if min then value = math.max(min, value) end
     if max then value = math.min(max, value) end
 
-    local title = text(card, name, 10, opts.Description and 10 or 14.5, math.max(30, w - 116), 14, 12, white)
+    local title = text(card, name, 10, opts.Description and 7 or 14.5, math.max(30, w - 116), 14, 12, white)
     if opts.Description then
-        muted(card, opts.Description, 10, 23, math.max(30, w - 116), 14, 11)
+        muted(card, opts.Description, 10, 22, math.max(30, w - 116), 14, 11)
     end
     local minus = paint(rect(card, w - 100, 11.5, 20, 20, palette[4], 4, "TextButton"), 4)
     text(minus, "-", 0, 0, 20, 20, 14, white, "center")
@@ -5628,19 +5719,25 @@ function Tab:AddSegmented(opts)
     if #options == 0 then options = {"-"} end
 
     local withTitle = opts.Name ~= nil
-    local card = self:_card(w, withTitle and 68 or 41, name)
+    local hasDescription = withTitle and opts.Description ~= nil
+    local rowY = withTitle and (hasDescription and 40 or 30) or 8
+    local card = self:_card(w, rowY + 34, name)
     local title
     if withTitle then
         title = text(card, name, 10, 10, w - 20, 14, 12, white)
-        if opts.Description then
+        if hasDescription then
             muted(card, opts.Description, 10, 22, w - 20, 14, 11)
         end
     end
 
-    local rowY = withTitle and 27 or 5
-    local gap = 6
+    -- One bordered track with a highlight that springs to the active option.
     local total = w - 20
-    local cellW = math.floor((total - gap * (#options - 1)) / #options)
+    local track = paint(rect(card, 10, rowY, total, 26, palette[1], Library.Design.ControlRadius), 1)
+    new("UIStroke", track, {Color = palette[5], Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    local cellW = (total - 4) / #options
+    local indicator = paint(rect(track, 2, 2, cellW, 22, palette[4], Library.Design.ControlRadius - 1), 4)
+    new("UIStroke", indicator, {Color = palette[6], Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border})
+    local indicatorX, indicatorVelocity = nil, 0
     local selection = 1
     local cells = {}
     local api = baseApi(self, card, flag)
@@ -5665,10 +5762,23 @@ function Tab:AddSegmented(opts)
         push(not silent)
     end
 
+    step(function(dt)
+        local target = 2 + (selection - 1) * cellW
+        if not indicatorX or Library.FadeAnimations == false then
+            indicatorX, indicatorVelocity = target, 0
+        else
+            indicatorX, indicatorVelocity = spring(indicatorX, indicatorVelocity, target, 32, dt)
+            if indicatorX ~= target and self.Window then self.Window.Animating = true end
+        end
+        indicator.Position = UDim2.fromOffset(roundPixel(indicatorX), 2)
+        indicator.Size = UDim2.fromOffset(roundPixel(cellW), 22)
+    end, track)
+
     for index, option in ipairs(options) do
-        local cell = paint(rect(card, 10 + (index - 1) * (cellW + gap), rowY, cellW, 31,
-            palette[4], 3, "TextButton"), 4)
-        local caption = text(cell, option, 0, 0, cellW, 31, 11, palette[3], "center")
+        local cell = transparent(track, 2 + (index - 1) * cellW, 2, cellW, 22, "TextButton")
+        cell.ZIndex = 3
+        local caption = text(cell, option, 0, 0, cellW, 22, 11, palette[3], "center")
+        caption.Object.ZIndex = 3
         connect(cell.Activated, function()
             selection = index
             push(true)
@@ -5679,9 +5789,7 @@ function Tab:AddSegmented(opts)
         step(function(dt, k)
             local active = selection == index
             a = approach(a, active and 1 or 0, k)
-            cell.BackgroundColor3 = palette[4]:Lerp(palette[5], hover and 1 or 0)
-                :Lerp(accent, a * 0.55 * state.AccentAlpha)
-            tint = tint:Lerp(active and white or palette[3], k)
+            tint = tint:Lerp(active and white or palette[3]:Lerp(white, hover and 0.5 or 0), k)
             caption:Color(tint)
         end, cell)
         cells[index] = cell
@@ -7285,7 +7393,8 @@ end
 function Tab:AddConfigManager(opts)
     if not Library.Configs or not Library.Configs.Enabled then return nil, "configs are disabled" end
     opts = opts or {}
-    local heading = self:AddSection(opts.Name or "Configs")
+    -- Inside a block the block caption already names the manager.
+    local heading = not self.IsGroup and self:AddSection(opts.Name or "Configs") or nil
 
     if not Library:HasDefaults() then
         (Runtime.GetOwner() or Library.Maid):Delay(0, function()
@@ -7302,7 +7411,7 @@ function Tab:AddConfigManager(opts)
 
     local function guard(callback)
         return function(...)
-            local ok, err = Library:Safe(callback, ...)
+            local ok, err = pcall(callback, ...)
             if not ok then say(string.match(tostring(err), "^[^\n]*") or "error") end
         end
     end
@@ -7311,7 +7420,6 @@ function Tab:AddConfigManager(opts)
         Name = opts.NameLabel or "Config name",
         Flag = nameFlag,
         Placeholder = opts.Placeholder or "default",
-        Width = 0.5,
         NoSave = true,
     })
     local picker = self:AddDropdown({
@@ -7319,13 +7427,13 @@ function Tab:AddConfigManager(opts)
         Flag = pickerFlag,
         Options = Library:ListConfigs(),
         EmptyText = opts.EmptyText or "No saved configs",
-        Width = 0.5,
     })
     Library.NoSaveFlags[pickerFlag] = true
     Library.NoSaveFlags[pickerFlag .. ".Text"] = true
 
     local selectionButtons = {}
-    local controls = {heading, nameBox, picker}
+    local controls = {nameBox, picker}
+    if heading then table.insert(controls, 1, heading) end
     local managerEnabled = true
 
     local function refresh()
@@ -7353,7 +7461,7 @@ function Tab:AddConfigManager(opts)
         AutoLoading = true,
         Text = "Save",
         Compact = true,
-        Width = 0.33,
+        Width = 0.25,
         Callback = guard(function()
             local name = chosen()
             local ok, result = Library:SaveConfigFile(name)
@@ -7367,7 +7475,7 @@ function Tab:AddConfigManager(opts)
         AutoLoading = true,
         Text = "Load",
         Compact = true,
-        Width = 0.33,
+        Width = 0.25,
         Callback = guard(function()
             local name = chosen()
             local ok, detail = Library:LoadConfigFile(name)
@@ -7388,7 +7496,7 @@ function Tab:AddConfigManager(opts)
         Name = "Delete config",
         Text = "Delete",
         Compact = true,
-        Width = 0.33,
+        Width = 0.25,
         Callback = guard(function()
             local name = chosen()
             Library:Dialog({
@@ -7409,7 +7517,7 @@ function Tab:AddConfigManager(opts)
         Name = "Refresh configs",
         Text = "Refresh",
         Compact = true,
-        Width = 0.33,
+        Width = 0.25,
         Callback = guard(function()
             refresh()
         end),
@@ -8608,13 +8716,16 @@ end
 
 do
     local listeners = {}
-    local Cfg = {Defaults = nil, Saved = {}, AutoSave = nil}
+    local Cfg = {Defaults = nil, Saved = {}, AutoSave = nil, Undo = nil}
+    local function captureUndo(self)
+        local ok, config = pcall(self.GetConfig, self)
+        if ok then Cfg.Undo = config end
+    end
 
     local function emit(kind, name, detail)
         for _, listener in ipairs(listeners) do
             Runtime.Spawn(function() pcall(listener, kind, name, detail) end)
         end
-        if Library.Log then Library:Log(kind .. ": " .. tostring(name), "config") end
     end
 
     local function canonical(value)
@@ -8863,7 +8974,6 @@ do
                     config.__version = step.Version
                 else
                     local problem = "migration " .. step.Version .. " failed: " .. tostring(result)
-                    if self.Log then self:Log(problem, "error") end
                     return nil, problem
                 end
             end
@@ -8923,7 +9033,7 @@ do
         local meta = type(decoded.Meta) == "table" and decoded.Meta or nil
         local tampered = meta ~= nil and meta.Checksum ~= nil
             and meta.Checksum ~= configHash(canonical(decoded.Flags or {}))
-        if options.NoUndo ~= true then pcall(self.Snapshot, self, "__undo") end
+        if options.NoUndo ~= true then captureUndo(self) end
         local applied, loaded, detail = pcall(self.LoadConfig, self, decoded)
         if not applied then return false, tostring(loaded) end
         if loaded == true and type(detail) == "table" then
@@ -9164,7 +9274,7 @@ do
     function Library:ImportConfig(text, key)
         local decoded, problem = unpackConfig(text, key)
         if not decoded then return false, problem end
-        pcall(self.Snapshot, self, "__undo")
+        captureUndo(self)
         emit("import", "string")
         return self:LoadConfig(decoded)
     end
@@ -9349,14 +9459,15 @@ do
 
     function Library:ResetToDefaults()
         if not Cfg.Defaults then return false, "defaults were not captured" end
-        pcall(self.Snapshot, self, "__undo")
+        captureUndo(self)
         local ok, detail = self:LoadConfig({Flags = Cfg.Defaults, __version = self.Version})
         if ok == true then emit("reset", "defaults") end
         return ok, detail
     end
 
     function Library:UndoConfigLoad()
-        local ok, detail = self:RestoreSnapshot("__undo")
+        if not Cfg.Undo then return false, "nothing to undo" end
+        local ok, detail = self:LoadConfig(Cfg.Undo)
         if ok == true then emit("undo", "__undo") end
         return ok, detail
     end
@@ -9383,8 +9494,7 @@ do
                     if okConfig then
                         local current = canonical(config.Flags or {})
                         if Cfg.Saved[slot] ~= current then
-                            local ok, result = Library:SaveConfigFile(slot, {Note = "autosave"})
-                            if Library.Log then Library:Log("autosave " .. tostring(ok) .. ": " .. tostring(result), "config") end
+                            Library:SaveConfigFile(slot, {Note = "autosave"})
                         end
                     end
                 end
@@ -9706,230 +9816,6 @@ Library.MaidClass = Maid
 Library.TabClass = Tab
 Library.WindowClass = Window
 Library.NewMaid = Maid.new
-
-function Library:SetMemoryOptions(opts)
-    opts = opts or {}
-    if opts.SweepInterval ~= nil then Runtime.SweepInterval = math.max(0.25, tonumber(opts.SweepInterval) or 3) end
-end
-
-function Library:Collect(full)
-    local dropped = sweepConnections(true)
-    local collected, problem = pcall(collectgarbage, full and "collect" or "step")
-    local stats = self:GetMemoryStats()
-    stats.Dropped = dropped
-    stats.Collected = collected
-    if not collected then stats.CollectionError = tostring(problem) end
-    return stats
-end
-
-function Library:GetMemoryStats()
-    local window = self.Window
-    local live, connections, pendingTasks = 0, 0, 0
-    for maid in pairs(liveMaids) do
-        live = live + 1
-        for _, item in pairs(maid._tasks) do
-            if typeof(item) == "RBXScriptConnection" and item.Connected then connections = connections + 1
-            elseif typeof(item) == "thread" and coroutine.status(item) ~= "dead" then pendingTasks = pendingTasks + 1 end
-        end
-    end
-    for _, connection in ipairs(Runtime.Connections) do
-        if connection.Connected then connections = connections + 1 end
-    end
-    local elements = 0
-    for _ in pairs(self.Elements or {}) do elements = elements + 1 end
-    local instances = 0
-    if window and window.Gui and window.Gui.Parent then instances = #window.Gui:GetDescendants() end
-    local fadeCount = 0
-    for _ in pairs(fadeCaches) do fadeCount = fadeCount + 1 end
-    return {
-        LuaKB = collectgarbage("count"),
-        Connections = connections,
-        PendingTasks = pendingTasks,
-        CallbackErrors = Runtime.Stats.CallbackErrors or 0,
-        LastCallbackError = Runtime.Stats.LastCallbackError,
-        ConnectionsTotal = Runtime.Stats.Connections,
-        ConnectionsSwept = Runtime.Stats.Disconnected,
-        Updates = #Runtime.Updates,
-        OverlayUpdates = #Runtime.Overlay,
-        Maids = live,
-        MaidsDestroyed = Runtime.Stats.MaidsDestroyed,
-        Elements = elements,
-        Popups = window and #window.Popups or 0,
-        Notifications = window and #window.Notifications or 0,
-        Instances = instances,
-        FadeCaches = fadeCount,
-        Sweeps = Runtime.Stats.Sweeps,
-        UpdateErrors = Runtime.Stats.UpdateErrors or 0,
-        LastUpdateError = Runtime.Stats.LastUpdateError,
-    }
-end
-
-function Library:MemoryReport()
-    local s = self:GetMemoryStats()
-    return string.format(
-        "WolfUi memory: %.0f KB lua | %d instances | %d elements | %d conns (%d total, %d swept) | %d updates | %d maids (%d freed) | %d popups | %d notifs",
-        s.LuaKB, s.Instances, s.Elements, s.Connections, s.ConnectionsTotal, s.ConnectionsSwept,
-        s.Updates + s.OverlayUpdates, s.Maids, s.MaidsDestroyed, s.Popups, s.Notifications)
-end
-
-do
-    local Extra = {Snapshots = {}, Journal = {}, AutoSave = nil}
-
-    local function record(kind, message)
-        local journal = Extra.Journal
-        journal[#journal + 1] = {Time = os.clock(), Kind = kind, Message = tostring(message)}
-        while #journal > 200 do table.remove(journal, 1) end
-    end
-
-    function Library:Log(message, kind)
-        record(kind or "info", message)
-    end
-
-    function Library:GetLog()
-        local copy = {}
-        for index, entry in ipairs(Extra.Journal) do copy[index] = entry end
-        return copy
-    end
-
-    function Library:ClearLog()
-        Extra.Journal = {}
-    end
-
-    function Library:Safe(callback, ...)
-        if type(callback) ~= "function" then return false, "callback is not a function" end
-        local packed = table.pack(xpcall(callback, function(err)
-            return debug.traceback(tostring(err), 2)
-        end, ...))
-        if packed[1] then return true, table.unpack(packed, 2, packed.n) end
-        record("error", packed[2])
-        warn("WolfUi: " .. tostring(packed[2]))
-        return false, packed[2]
-    end
-
-    function Library:Debounce(callback, delay)
-        assert(type(callback) == "function", "Debounce requires a callback")
-        delay = math.max(0, Runtime.Number(delay, 0.25))
-        local owner = Runtime.GetOwner() or self.Maid
-        local pending
-        return function(...)
-            if self.Destroyed or owner and owner.Destroyed then return end
-            if pending and coroutine.status(pending) ~= "dead" then
-                pcall(task.cancel, pending)
-                if owner then owner._tasks[pending] = nil end
-            end
-            owner = owner or Runtime.GetOwner() or self.Maid
-            if owner then
-                pending = owner:Delay(delay, callback, ...)
-            else
-                pending = task.delay(delay, function(...) self:Safe(callback, ...) end, ...)
-            end
-        end
-    end
-
-    function Library:Throttle(callback, interval)
-        interval = math.max(0, tonumber(interval) or 0.1)
-        local last = -math.huge
-        return function(...)
-            local now = os.clock()
-            if now - last < interval then return false end
-            last = now
-            return Library:Safe(callback, ...)
-        end
-    end
-
-    function Library:Snapshot(name)
-        name = tostring(name or "default")
-        Extra.Snapshots[name] = {Time = os.time(), Config = self:GetConfig()}
-        record("snapshot", name)
-        return name
-    end
-
-    function Library:RestoreSnapshot(name)
-        name = tostring(name or "default")
-        local item = Extra.Snapshots[name]
-        if not item then return false, "snapshot not found: " .. name end
-        record("restore", name)
-        return self:LoadConfig(item.Config)
-    end
-
-    function Library:ListSnapshots()
-        local names = {}
-        for name in pairs(Extra.Snapshots) do names[#names + 1] = name end
-        table.sort(names)
-        return names
-    end
-
-    function Library:DeleteSnapshot(name)
-        name = tostring(name or "default")
-        local existed = Extra.Snapshots[name] ~= nil
-        Extra.Snapshots[name] = nil
-        return existed
-    end
-
-    function Library:Diagnostics()
-        local env = Runtime.Env()
-        local names = {
-            "gethui", "get_hidden_gui", "cloneref", "loadstring", "getgenv", "identifyexecutor",
-            "isfile", "readfile", "writefile", "delfile", "makefolder", "isfolder", "listfiles",
-            "setclipboard", "queue_on_teleport", "request", "http_request",
-        }
-        local capabilities, missing = {}, {}
-        for _, name in ipairs(names) do
-            local value = env[name]
-            if value == nil then value = _G[name] end
-            capabilities[name] = value ~= nil
-            if value == nil then missing[#missing + 1] = name end
-        end
-        local executor = "unknown"
-        local identify = env.identifyexecutor or _G.identifyexecutor
-        if type(identify) == "function" then
-            local ok, first, second = pcall(identify)
-            if ok and first then executor = tostring(first) .. (second and (" " .. tostring(second)) or "") end
-        end
-        local window = self.Window
-        local host = "none"
-        if window and window.Gui and window.Gui.Parent then host = tostring(window.Gui.Parent.Name) end
-        local flagCount, elementCount = 0, 0
-        for _ in pairs(self.Flags or {}) do flagCount = flagCount + 1 end
-        for _ in pairs(self.Elements or {}) do elementCount = elementCount + 1 end
-        return {
-            Version = self.Version,
-            Executor = executor,
-            Host = host,
-            Window = window ~= nil,
-            Flags = flagCount,
-            Elements = elementCount,
-            Snapshots = #self:ListSnapshots(),
-            LogEntries = #Extra.Journal,
-            Capabilities = capabilities,
-            Missing = missing,
-            Memory = self:GetMemoryStats(),
-        }
-    end
-
-    function Library:DiagnosticsReport()
-        local info = self:Diagnostics()
-        local lines = {
-            string.format("WolfUi %s | executor: %s | host: %s", tostring(info.Version), info.Executor, info.Host),
-            string.format("window: %s | flags: %d | elements: %d | snapshots: %d | log: %d",
-                tostring(info.Window), info.Flags, info.Elements, info.Snapshots, info.LogEntries),
-            "missing: " .. (#info.Missing > 0 and table.concat(info.Missing, ", ") or "nothing"),
-            self:MemoryReport(),
-        }
-        return table.concat(lines, "\n")
-    end
-
-    function Library:CopyDiagnostics()
-        local text = self:DiagnosticsReport()
-        local env = Runtime.Env()
-        local copy = env.setclipboard or _G.setclipboard
-        if type(copy) == "function" then
-            local ok = pcall(copy, text)
-            return ok, text
-        end
-        return false, text
-    end
-end
 
 do
     local createWindow = Library.CreateWindow
